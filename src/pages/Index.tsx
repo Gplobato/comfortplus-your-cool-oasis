@@ -8,6 +8,7 @@ import { CTASection } from "@/components/CTASection";
 import { Footer } from "@/components/Footer";
 import type { CartItem } from "@/components/CartDrawer";
 import productHero from "@/assets/product-hero.png";
+import { trackAddToCart, trackInitiateCheckout } from "@/lib/facebook-pixel";
 
 const CHECKOUT_URL = "https://pay.cakto.com.br/3coih6e_784318";
 
@@ -25,12 +26,13 @@ const Index = () => {
   const addToCart = () => {
     setCartItems((prev) => {
       const existing = prev.find((item) => item.id === PRODUCT.id);
-      if (existing) {
-        return prev.map((item) =>
-          item.id === PRODUCT.id ? { ...item, quantity: item.quantity + 1 } : item
-        );
-      }
-      return [...prev, { ...PRODUCT, quantity: 1 }];
+      const next = existing
+        ? prev.map((item) =>
+            item.id === PRODUCT.id ? { ...item, quantity: item.quantity + 1 } : item
+          )
+        : [...prev, { ...PRODUCT, quantity: 1 }];
+      trackAddToCart(PRODUCT.price, "BRL", PRODUCT.name);
+      return next;
     });
   };
 
@@ -56,7 +58,11 @@ const Index = () => {
         cartItems={cartItems}
         onUpdateQuantity={updateQuantity}
         onRemoveItem={removeItem}
-        onCheckout={() => window.open(CHECKOUT_URL, "_blank")}
+        onCheckout={() => {
+          const total = cartItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+          trackInitiateCheckout(total, "BRL");
+          window.open(CHECKOUT_URL, "_blank");
+        }}
       />
       <HeroSection onAddToCart={addToCart} />
       <FeaturesSection />
