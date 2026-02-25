@@ -39,15 +39,16 @@ export const ProductShowcase = ({ onAddToCart }: ProductShowcaseProps) => {
             </h2>
             <p className="text-muted-foreground text-lg leading-relaxed">
               Esqueça os dias sufocantes no escritório, em casa ou no quarto. O ComfortPlus cria uma zona de conforto pessoal em
-              segundos. Basta conectar na USB, adicionar água gelada e sentir a diferença imediatamente.
+              segundos. Bivolt (127V/220V), carregamento USB e design compacto para levar para qualquer lugar.
             </p>
 
             <div className="space-y-4">
               {[
-                "Reservatório de 500ml — até 8 horas de frescor contínuo",
-                "Design premium em ABS com acabamento fosco",
-                "Filtro removível e lavável — zero manutenção",
-                "Compacto: apenas 16x16x26cm — leve para qualquer lugar",
+                "7 cores de LED — ambiente personalizado para cada momento",
+                "Resfria e umidifica — combate o calor e o ar seco",
+                "3 velocidades — do modo suave ao turbo refrescante",
+                "Bivolt (127V/220V) + Carregamento USB — use em qualquer lugar",
+                "Compacto e silencioso — perfeito para mesa, quarto ou escritório",
               ].map((item, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <div className="w-6 h-6 rounded-full bg-cta-gradient flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -62,9 +63,9 @@ export const ProductShowcase = ({ onAddToCart }: ProductShowcaseProps) => {
 
             <div className="flex items-end gap-4">
               <div>
-                <p className="text-sm text-muted-foreground line-through">R$ 497,00</p>
-                <p className="text-3xl font-extrabold text-foreground">R$ 297<span className="text-lg">,00</span></p>
-                <p className="text-xs text-success font-semibold">40% OFF — Oferta por tempo limitado</p>
+                <p className="text-sm text-muted-foreground line-through">R$ 119,90</p>
+                <p className="text-3xl font-extrabold text-foreground">R$ 59<span className="text-lg">,90</span></p>
+                <p className="text-xs text-success font-semibold">50% OFF — Oferta por tempo limitado</p>
               </div>
               <Button variant="hero" size="lg" onClick={onAddToCart}>
                 <ShoppingCart className="w-5 h-5" />

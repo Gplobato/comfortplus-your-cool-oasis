@@ -11,7 +11,7 @@ interface CheckoutPageProps {
 
 export const CheckoutPage = ({ onBack, quantity }: CheckoutPageProps) => {
   const [step, setStep] = useState<"info" | "success">("info");
-  const price = 297;
+  const price = 59.9;
   const total = price * quantity;
 
   const [form, setForm] = useState({

@@ -6,20 +6,21 @@ import { ProductShowcase } from "@/components/ProductShowcase";
 import { TestimonialsSection } from "@/components/TestimonialsSection";
 import { CTASection } from "@/components/CTASection";
 import { Footer } from "@/components/Footer";
-import { CheckoutPage } from "@/components/CheckoutPage";
 import type { CartItem } from "@/components/CartDrawer";
 import productHero from "@/assets/product-hero.png";
+
+const CHECKOUT_URL = "https://pay.cakto.com.br/3coih6e_784318";
 
 const PRODUCT: Omit<CartItem, "quantity"> = {
   id: "comfortplus-1",
   name: "ComfortPlus — Ar Condicionado Portátil USB",
-  price: 297,
+  price: 59.9,
   image: productHero,
 };
 
 const Index = () => {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [showCheckout, setShowCheckout] = useState(false);
+  
 
   const addToCart = () => {
     setCartItems((prev) => {
@@ -47,16 +48,7 @@ const Index = () => {
     setCartItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const totalQuantity = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
-  if (showCheckout) {
-    return (
-      <CheckoutPage
-        onBack={() => setShowCheckout(false)}
-        quantity={totalQuantity || 1}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen">
@@ -64,7 +56,7 @@ const Index = () => {
         cartItems={cartItems}
         onUpdateQuantity={updateQuantity}
         onRemoveItem={removeItem}
-        onCheckout={() => setShowCheckout(true)}
+        onCheckout={() => window.open(CHECKOUT_URL, "_blank")}
       />
       <HeroSection onAddToCart={addToCart} />
       <FeaturesSection />
