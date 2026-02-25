@@ -56,16 +56,16 @@ export const HeroSection = ({ onAddToCart }: HeroSectionProps) => {
             </h1>
 
             <p className="text-lg text-muted-foreground max-w-lg leading-relaxed">
-              O <strong className="text-foreground">ComfortPlus</strong> é o ar condicionado portátil USB que transforma
-              qualquer ambiente. Potência equivalente a{" "}
-              <strong className="text-foreground">3.000 BTUs</strong>, silencioso
-              e com design premium. Resfrie seu espaço pessoal em segundos.
+              O <strong className="text-foreground">ComfortPlus</strong> é o ar condicionado portátil que resfria, umidifica e
+              ilumina com 7 cores de LED. Bivolt (127V/220V), carregamento USB,{" "}
+              <strong className="text-foreground">3 velocidades</strong> e design compacto.
+              Refresque seu espaço pessoal em segundos.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <Button variant="hero" size="xl" onClick={onAddToCart}>
+              <Button variant="hero" size="xl" onClick={() => window.open("https://pay.cakto.com.br/3coih6e_784318", "_blank")}>
                 <ShoppingCart className="w-5 h-5" />
-                Comprar Agora — R$ 297,00
+                Comprar Agora — R$ 59,90
               </Button>
               <Button variant="heroOutline" size="xl" onClick={() => {
                 document.getElementById("features")?.scrollIntoView({ behavior: "smooth" });

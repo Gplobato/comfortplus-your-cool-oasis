@@ -1,21 +1,21 @@
 import { motion } from "framer-motion";
-import { Wind, Zap, Volume2, Droplets, Thermometer, Usb } from "lucide-react";
+import { Wind, Zap, Volume2, Droplets, Thermometer, Usb, Lightbulb, PlugZap } from "lucide-react";
 
 const features = [
   {
     icon: Thermometer,
-    title: "3.000 BTUs Equivalentes",
-    description: "Potência real de refrigeração que reduz a temperatura em até 12°C no seu espaço pessoal.",
+    title: "Resfriamento Poderoso",
+    description: "Reduz a temperatura do seu espaço pessoal em segundos. Ideal para escritório, quarto e home office.",
   },
   {
     icon: Usb,
-    title: "Alimentação USB",
-    description: "Conecte em qualquer porta USB, power bank ou tomada. Praticidade total onde você estiver.",
+    title: "Carregamento USB",
+    description: "Conecte em qualquer porta USB, power bank ou notebook. Praticidade total onde você estiver.",
   },
   {
-    icon: Volume2,
-    title: "Ultra Silencioso",
-    description: "Apenas 28dB no modo sleep. Perfeito para trabalhar, estudar ou dormir sem interrupções.",
+    icon: PlugZap,
+    title: "Bivolt 127V / 220V",
+    description: "Funciona em qualquer tomada do Brasil. Sem adaptadores, sem complicações.",
   },
   {
     icon: Wind,
@@ -26,6 +26,16 @@ const features = [
     icon: Droplets,
     title: "Umidificador Integrado",
     description: "Além de resfriar, umidifica o ar, combatendo o ressecamento e melhorando a qualidade do ambiente.",
+  },
+  {
+    icon: Lightbulb,
+    title: "7 Cores de LED",
+    description: "Iluminação ambiente com 7 cores para personalizar seu espaço e criar o clima perfeito.",
+  },
+  {
+    icon: Volume2,
+    title: "Ultra Silencioso",
+    description: "Perfeito para trabalhar, estudar ou dormir sem interrupções. Conforto sem ruído.",
   },
   {
     icon: Zap,
@@ -54,7 +64,7 @@ export const FeaturesSection = () => {
           </p>
         </motion.div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
           {features.map((feature, i) => (
             <motion.div
               key={feature.title}
