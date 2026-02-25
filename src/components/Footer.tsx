@@ -15,7 +15,7 @@ export const Footer = () => {
               © 2025 ComfortPlus. Todos os direitos reservados.
             </p>
             <p className="text-xs text-muted-foreground">
-              CNPJ: 00.000.000/0001-00
+              CNPJ: 41.353.783/0001-74
             </p>
           </div>
 
