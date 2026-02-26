@@ -1,152 +1,321 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useCallback } from "react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { CreditCard, ShieldCheck, Truck, ArrowLeft, Check } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CreditCard, ShieldCheck, Truck, ArrowLeft, Package } from "lucide-react";
 import productHero from "@/assets/product-hero.png";
+import { trackAddPaymentInfo, trackPurchase } from "@/lib/facebook-pixel";
+
+const PRODUCT_NAME = "ComfortPlus — Ar Portátil USB";
+const UNIT_PRICE = 59.9;
 
 interface CheckoutPageProps {
   onBack: () => void;
   quantity: number;
+  checkoutUrl: string;
 }
 
-export const CheckoutPage = ({ onBack, quantity }: CheckoutPageProps) => {
-  const [step, setStep] = useState<"info" | "success">("info");
-  const price = 59.9;
-  const total = price * quantity;
+export const CheckoutPage = ({ onBack, quantity, checkoutUrl }: CheckoutPageProps) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const total = UNIT_PRICE * quantity;
 
   const [form, setForm] = useState({
-    name: "", email: "", phone: "", cpf: "",
-    cep: "", address: "", number: "", complement: "", city: "", state: "",
+    name: "",
+    email: "",
+    phone: "",
+    cpf: "",
+    cep: "",
+    address: "",
+    number: "",
+    complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const fetchCep = useCallback(async (cep: string) => {
+    const digits = cep.replace(/\D/g, "");
+    if (digits.length !== 8) return;
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const data = await res.json();
+      if (!data.erro) {
+        setForm((prev) => ({
+          ...prev,
+          address: data.logradouro ?? prev.address,
+          neighborhood: data.bairro ?? prev.neighborhood,
+          city: data.localidade ?? prev.city,
+          state: data.uf ?? prev.state,
+        }));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleCepBlur = () => {
+    if (form.cep.trim()) fetchCep(form.cep);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setStep("success");
-  };
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
-  const inputClass = "w-full px-4 py-3 rounded-xl bg-frost border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-sm";
+    trackAddPaymentInfo(total, "BRL");
+    trackPurchase(total, "BRL", PRODUCT_NAME, ["comfortplus-1"], quantity);
+
+    window.location.href = checkoutUrl;
+  };
 
   return (
     <div className="min-h-screen bg-hero-gradient">
-      <div className="container mx-auto px-6 py-12">
-        <button onClick={onBack} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-8">
+      <div className="container mx-auto px-6 py-8 md:py-12">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6 md:mb-8 text-sm font-medium"
+        >
           <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Voltar à loja</span>
+          Voltar à loja
         </button>
 
-        <AnimatePresence mode="wait">
-          {step === "info" ? (
-            <motion.div
-              key="form"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="grid lg:grid-cols-5 gap-10"
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="grid lg:grid-cols-5 gap-8 lg:gap-10"
+        >
+          <form onSubmit={handleSubmit} className="lg:col-span-3 space-y-8">
+            <Card className="border-border bg-card/80 shadow-card overflow-hidden">
+              <CardHeader>
+                <CardTitle className="text-xl">Dados pessoais</CardTitle>
+              </CardHeader>
+              <CardContent className="grid sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <Label htmlFor="name">Nome completo</Label>
+                  <Input
+                    id="name"
+                    name="name"
+                    placeholder="Como no documento"
+                    required
+                    value={form.name}
+                    onChange={handleChange}
+                    className="mt-1.5 rounded-xl bg-frost border-border"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="email">E-mail</Label>
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    placeholder="seu@email.com"
+                    required
+                    value={form.email}
+                    onChange={handleChange}
+                    className="mt-1.5 rounded-xl bg-frost border-border"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="phone">Telefone (WhatsApp)</Label>
+                  <Input
+                    id="phone"
+                    name="phone"
+                    placeholder="(11) 99999-9999"
+                    required
+                    value={form.phone}
+                    onChange={handleChange}
+                    className="mt-1.5 rounded-xl bg-frost border-border"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label htmlFor="cpf">CPF</Label>
+                  <Input
+                    id="cpf"
+                    name="cpf"
+                    placeholder="000.000.000-00"
+                    required
+                    value={form.cpf}
+                    onChange={handleChange}
+                    className="mt-1.5 rounded-xl bg-frost border-border"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-card/80 shadow-card overflow-hidden">
+              <CardHeader>
+                <CardTitle className="text-xl">Endereço de entrega</CardTitle>
+              </CardHeader>
+              <CardContent className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="cep">CEP</Label>
+                  <Input
+                    id="cep"
+                    name="cep"
+                    placeholder="00000-000"
+                    required
+                    value={form.cep}
+                    onChange={handleChange}
+                    onBlur={handleCepBlur}
+                    className="mt-1.5 rounded-xl bg-frost border-border"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="city">Cidade</Label>
+                  <Input
+                    id="city"
+                    name="city"
+                    placeholder="Sua cidade"
+                    required
+                    value={form.city}
+                    onChange={handleChange}
+                    className="mt-1.5 rounded-xl bg-frost border-border"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label htmlFor="address">Rua / Avenida</Label>
+                  <Input
+                    id="address"
+                    name="address"
+                    placeholder="Logradouro"
+                    required
+                    value={form.address}
+                    onChange={handleChange}
+                    className="mt-1.5 rounded-xl bg-frost border-border"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="number">Número</Label>
+                  <Input
+                    id="number"
+                    name="number"
+                    placeholder="Nº"
+                    required
+                    value={form.number}
+                    onChange={handleChange}
+                    className="mt-1.5 rounded-xl bg-frost border-border"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="complement">Complemento</Label>
+                  <Input
+                    id="complement"
+                    name="complement"
+                    placeholder="Apto, bloco (opcional)"
+                    value={form.complement}
+                    onChange={handleChange}
+                    className="mt-1.5 rounded-xl bg-frost border-border"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="neighborhood">Bairro</Label>
+                  <Input
+                    id="neighborhood"
+                    name="neighborhood"
+                    placeholder="Bairro"
+                    value={form.neighborhood}
+                    onChange={handleChange}
+                    className="mt-1.5 rounded-xl bg-frost border-border"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="state">Estado</Label>
+                  <Input
+                    id="state"
+                    name="state"
+                    placeholder="UF"
+                    required
+                    value={form.state}
+                    onChange={handleChange}
+                    className="mt-1.5 rounded-xl bg-frost border-border"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-card/80 shadow-card overflow-hidden">
+              <CardHeader>
+                <CardTitle className="text-xl flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-primary" />
+                  Pagamento
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground text-sm">
+                  Ao clicar em &quot;Ir para pagamento&quot;, você será redirecionado ao ambiente seguro da Cakto para finalizar o pagamento.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Button
+              type="submit"
+              variant="hero"
+              size="xl"
+              className="w-full rounded-xl"
+              disabled={isSubmitting}
             >
-              {/* Form */}
-              <form onSubmit={handleSubmit} className="lg:col-span-3 space-y-8">
-                <div>
-                  <h2 className="text-2xl font-bold text-foreground mb-6">Dados Pessoais</h2>
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <input name="name" placeholder="Nome completo" required value={form.name} onChange={handleChange} className={inputClass} />
-                    <input name="email" type="email" placeholder="E-mail" required value={form.email} onChange={handleChange} className={inputClass} />
-                    <input name="phone" placeholder="Telefone (WhatsApp)" required value={form.phone} onChange={handleChange} className={inputClass} />
-                    <input name="cpf" placeholder="CPF" required value={form.cpf} onChange={handleChange} className={inputClass} />
+              <ShieldCheck className="w-5 h-5" />
+              {isSubmitting ? "Redirecionando..." : `Ir para pagamento — R$ ${total.toFixed(2).replace(".", ",")}`}
+            </Button>
+          </form>
+
+          <div className="lg:col-span-2">
+            <Card className="sticky top-8 border-border bg-card shadow-card overflow-hidden">
+              <CardHeader>
+                <CardTitle className="text-lg">Resumo do pedido</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex gap-4">
+                  <img
+                    src={productHero}
+                    alt={PRODUCT_NAME}
+                    className="w-20 h-20 rounded-xl object-cover bg-frost shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-foreground text-sm">{PRODUCT_NAME}</p>
+                    <p className="text-muted-foreground text-xs mt-0.5">Qtd: {quantity}</p>
+                    <p className="text-primary font-bold mt-1">R$ {(UNIT_PRICE * quantity).toFixed(2).replace(".", ",")}</p>
                   </div>
                 </div>
 
-                <div>
-                  <h2 className="text-2xl font-bold text-foreground mb-6">Endereço de Entrega</h2>
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <input name="cep" placeholder="CEP" required value={form.cep} onChange={handleChange} className={inputClass} />
-                    <input name="city" placeholder="Cidade" required value={form.city} onChange={handleChange} className={inputClass} />
-                    <input name="address" placeholder="Rua / Avenida" required value={form.address} onChange={handleChange} className={`${inputClass} sm:col-span-2`} />
-                    <input name="number" placeholder="Número" required value={form.number} onChange={handleChange} className={inputClass} />
-                    <input name="complement" placeholder="Complemento" value={form.complement} onChange={handleChange} className={inputClass} />
-                    <input name="state" placeholder="Estado" required value={form.state} onChange={handleChange} className={inputClass} />
+                <div className="space-y-3 text-sm border-t border-border pt-4">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="text-foreground">R$ {total.toFixed(2).replace(".", ",")}</span>
                   </div>
-                </div>
-
-                <div>
-                  <h2 className="text-2xl font-bold text-foreground mb-6">Pagamento</h2>
-                  <div className="p-6 rounded-2xl bg-frost border border-border text-center">
-                    <CreditCard className="w-8 h-8 text-primary mx-auto mb-3" />
-                    <p className="text-muted-foreground text-sm">
-                      O gateway de pagamento será integrado em breve. Clique em "Finalizar Pedido" para simular a compra.
-                    </p>
-                  </div>
-                </div>
-
-                <Button variant="hero" size="xl" type="submit" className="w-full">
-                  <ShieldCheck className="w-5 h-5" />
-                  Finalizar Pedido — R$ {total.toFixed(2).replace(".", ",")}
-                </Button>
-              </form>
-
-              {/* Summary */}
-              <div className="lg:col-span-2">
-                <div className="sticky top-8 p-6 rounded-2xl bg-card shadow-card border border-border space-y-6">
-                  <h3 className="font-bold text-foreground text-lg">Resumo do Pedido</h3>
-                  <div className="flex gap-4">
-                    <img src={productHero} alt="ComfortPlus" className="w-20 h-20 rounded-xl object-cover bg-frost" />
-                    <div>
-                      <p className="font-semibold text-foreground text-sm">ComfortPlus — Ar Portátil USB</p>
-                      <p className="text-muted-foreground text-xs mt-1">Qtd: {quantity}</p>
-                      <p className="text-primary font-bold mt-1">R$ {total.toFixed(2).replace(".", ",")}</p>
-                    </div>
-                  </div>
-                  <div className="space-y-3 text-sm border-t border-border pt-4">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Subtotal</span>
-                      <span className="text-foreground">R$ {total.toFixed(2).replace(".", ",")}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Frete</span>
-                      <span className="text-success font-semibold">Grátis</span>
-                    </div>
-                    <div className="flex justify-between border-t border-border pt-3">
-                      <span className="font-bold text-foreground">Total</span>
-                      <span className="font-bold text-foreground text-lg">R$ {total.toFixed(2).replace(".", ",")}</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 text-xs text-muted-foreground">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-success" />
-                      <span>Compra 100% segura</span>
-                    </div>
-                    <div className="flex items-center gap-2">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
                       <Truck className="w-4 h-4 text-primary" />
-                      <span>Entrega em 3-7 dias úteis</span>
-                    </div>
+                      Frete SEDEX
+                    </span>
+                    <span className="text-foreground font-medium">3 a 5 dias úteis</span>
+                  </div>
+                  <div className="flex justify-between border-t border-border pt-3">
+                    <span className="font-bold text-foreground">Total</span>
+                    <span className="font-bold text-foreground text-lg">R$ {total.toFixed(2).replace(".", ",")}</span>
                   </div>
                 </div>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="success"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="max-w-lg mx-auto text-center py-20 space-y-6"
-            >
-              <div className="w-20 h-20 rounded-full bg-success mx-auto flex items-center justify-center">
-                <Check className="w-10 h-10 text-success-foreground" />
-              </div>
-              <h2 className="text-3xl font-extrabold text-foreground">Pedido Recebido!</h2>
-              <p className="text-muted-foreground">
-                Obrigado pela sua compra! Quando o gateway de pagamento for integrado, você receberá a confirmação por e-mail.
-              </p>
-              <Button variant="hero" size="lg" onClick={onBack}>
-                Voltar à Loja
-              </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+
+                <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2">
+                  <Package className="w-4 h-4 text-primary shrink-0" />
+                  <span>Entrega via SEDEX para todo o Brasil. Prazo de 3 a 5 dias úteis.</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <ShieldCheck className="w-4 h-4 text-success shrink-0" />
+                  <span>Compra 100% segura. Ambiente protegido na Cakto.</span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </motion.div>
       </div>
     </div>
   );

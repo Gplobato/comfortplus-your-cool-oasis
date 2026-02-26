@@ -4,11 +4,10 @@ import { ShoppingCart, Shield, Truck, RotateCcw } from "lucide-react";
 
 interface CTASectionProps {
   onAddToCart: () => void;
+  onGoToCheckout: () => void;
 }
 
-const CHECKOUT_URL = "https://pay.cakto.com.br/3coih6e_784318";
-
-export const CTASection = ({ onAddToCart }: CTASectionProps) => {
+export const CTASection = ({ onAddToCart, onGoToCheckout }: CTASectionProps) => {
   return (
     <section className="py-24 bg-hero-gradient">
       <div className="container mx-auto px-6">
@@ -35,7 +34,7 @@ export const CTASection = ({ onAddToCart }: CTASectionProps) => {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button variant="hero" size="xl" onClick={() => window.open(CHECKOUT_URL, "_blank")} className="mx-auto">
+            <Button variant="hero" size="xl" onClick={onGoToCheckout} className="mx-auto">
               <ShoppingCart className="w-5 h-5" />
               Comprar Agora — R$ 59,90
             </Button>

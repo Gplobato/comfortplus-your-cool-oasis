@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { HeroSection } from "@/components/HeroSection";
 import { FeaturesSection } from "@/components/FeaturesSection";
@@ -10,8 +11,6 @@ import type { CartItem } from "@/components/CartDrawer";
 import productHero from "@/assets/product-hero.png";
 import { trackAddToCart, trackInitiateCheckout } from "@/lib/facebook-pixel";
 
-const CHECKOUT_URL = "https://pay.cakto.com.br/3coih6e_784318";
-
 const PRODUCT: Omit<CartItem, "quantity"> = {
   id: "comfortplus-1",
   name: "ComfortPlus — Ar Condicionado Portátil USB",
@@ -20,8 +19,14 @@ const PRODUCT: Omit<CartItem, "quantity"> = {
 };
 
 const Index = () => {
+  const navigate = useNavigate();
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  
+
+  const goToCheckout = (quantity: number) => {
+    const total = quantity * PRODUCT.price;
+    trackInitiateCheckout(total, "BRL");
+    navigate("/checkout", { state: { quantity } });
+  };
 
   const addToCart = () => {
     setCartItems((prev) => {
@@ -59,18 +64,18 @@ const Index = () => {
         onUpdateQuantity={updateQuantity}
         onRemoveItem={removeItem}
         onCheckout={() => {
-          const total = cartItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
-          trackInitiateCheckout(total, "BRL");
-          window.open(CHECKOUT_URL, "_blank");
+          const qty = cartItems.reduce((sum, i) => sum + i.quantity, 0);
+          if (qty === 0) return;
+          goToCheckout(qty);
         }}
       />
-      <HeroSection onAddToCart={addToCart} />
+      <HeroSection onAddToCart={addToCart} onGoToCheckout={() => goToCheckout(1)} />
       <FeaturesSection />
       <ProductShowcase onAddToCart={addToCart} />
       <div id="testimonials">
         <TestimonialsSection />
       </div>
-      <CTASection onAddToCart={addToCart} />
+      <CTASection onAddToCart={addToCart} onGoToCheckout={() => goToCheckout(1)} />
       <Footer />
     </div>
   );

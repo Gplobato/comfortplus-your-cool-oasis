@@ -5,9 +5,10 @@ import productHero from "@/assets/product-hero.png";
 
 interface HeroSectionProps {
   onAddToCart: () => void;
+  onGoToCheckout: () => void;
 }
 
-export const HeroSection = ({ onAddToCart }: HeroSectionProps) => {
+export const HeroSection = ({ onAddToCart, onGoToCheckout }: HeroSectionProps) => {
   return (
     <section className="relative min-h-screen bg-hero-gradient overflow-hidden flex items-center">
       {/* Floating frost particles */}
@@ -63,7 +64,7 @@ export const HeroSection = ({ onAddToCart }: HeroSectionProps) => {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <Button variant="hero" size="xl" onClick={() => window.open("https://pay.cakto.com.br/3coih6e_784318", "_blank")}>
+              <Button variant="hero" size="xl" onClick={onGoToCheckout}>
                 <ShoppingCart className="w-5 h-5" />
                 Comprar Agora — R$ 59,90
               </Button>
