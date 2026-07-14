@@ -1,7 +1,9 @@
 import { useNavigate } from "react-router-dom";
-import { Bell, Command, Plus, Search } from "lucide-react";
+import { Bell, Command, Plus, Search, Sparkles } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,11 +14,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { notifications } from "@/mocks/data";
+import { useDemoMode } from "@/contexts/DemoModeContext";
 import { toast } from "sonner";
 
 export function AppHeader() {
   const navigate = useNavigate();
-  const unread = notifications.filter((n) => !n.read).length;
+  const { demoMode, setDemoMode } = useDemoMode();
+  const unread = demoMode ? notifications.filter((n) => !n.read).length : 0;
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur-xl md:px-6">
@@ -35,6 +39,21 @@ export function AppHeader() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <div className="hidden items-center gap-2 rounded-full border border-border bg-secondary/60 px-3 py-1.5 md:flex">
+          <Sparkles className={`h-3.5 w-3.5 ${demoMode ? "text-accent" : "text-muted-foreground"}`} />
+          <Label htmlFor="demo-mode" className="cursor-pointer text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {demoMode ? "Modo demo" : "Modo clean"}
+          </Label>
+          <Switch
+            id="demo-mode"
+            checked={demoMode}
+            onCheckedChange={(v) => {
+              setDemoMode(v);
+              toast.success(v ? "Modo demo ativado" : "Modo clean ativado");
+            }}
+          />
+        </div>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
@@ -51,12 +70,18 @@ export function AppHeader() {
               Notificações <span className="text-xs text-muted-foreground">{unread} novas</span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {notifications.map((n) => (
-              <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-0.5 py-2.5">
-                <span className="text-sm font-medium">{n.title}</span>
-                <span className="text-xs text-muted-foreground">{n.description}</span>
-              </DropdownMenuItem>
-            ))}
+            {demoMode ? (
+              notifications.map((n) => (
+                <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-0.5 py-2.5">
+                  <span className="text-sm font-medium">{n.title}</span>
+                  <span className="text-xs text-muted-foreground">{n.description}</span>
+                </DropdownMenuItem>
+              ))
+            ) : (
+              <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                Nenhuma notificação
+              </div>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -65,11 +90,11 @@ export function AppHeader() {
             <Button variant="ghost" className="h-10 gap-2.5 rounded-full px-1.5 pr-3">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-gradient-brand text-xs font-bold text-white">
-                  RG
+                  GA
                 </AvatarFallback>
               </Avatar>
               <div className="hidden text-left leading-tight md:block">
-                <p className="text-xs font-semibold">Rafael Gomes</p>
+                <p className="text-xs font-semibold">Gabriel</p>
                 <p className="text-[10px] text-muted-foreground">Administrador</p>
               </div>
             </Button>
