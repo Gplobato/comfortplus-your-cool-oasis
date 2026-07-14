@@ -40,12 +40,7 @@ export default function CampaignDetailPage() {
     <>
       <PageHeader
         title={c.name}
-        description={
-          <span className="flex items-center gap-3 text-sm">
-            <PlatformBadge platform={c.platform} /> · <CampaignStatusBadge status={c.status} /> ·{" "}
-            <span className="capitalize text-muted-foreground">{c.objective}</span>
-          </span> as any
-        }
+        description={`${c.platform.toUpperCase()} · ${c.status} · ${c.objective}`}
         actions={
           <>
             <Button variant="ghost" size="sm" className="h-9 gap-1" onClick={() => navigate(-1)}>
