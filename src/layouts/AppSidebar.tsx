@@ -116,36 +116,8 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-3">
-        {!collapsed ? (
-          <div className="rounded-xl border border-border bg-gradient-brand-soft p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Plano atual
-                </p>
-                <p className="font-display text-sm font-bold text-foreground">Pro Scale</p>
-              </div>
-              <Sparkles className="h-4 w-4 text-accent" />
-            </div>
-            <div className="mt-3">
-              <div className="flex items-baseline justify-between">
-                <span className="text-xs text-muted-foreground">Gasto do mês</span>
-                <span className="text-xs font-semibold">R$ 18.540 / 50.000</span>
-              </div>
-              <Progress value={37} className="mt-1.5 h-1.5" />
-            </div>
-            <Button size="sm" variant="outline" className="mt-3 w-full bg-white/70 text-xs">
-              Ver planos
-              <ChevronRight className="ml-1 h-3 w-3" />
-            </Button>
-          </div>
-        ) : (
-          <Button size="icon" variant="ghost" className="h-9 w-9">
-            <Sparkles className="h-4 w-4 text-accent" />
-          </Button>
-        )}
-      </SidebarFooter>
+      <SidebarFooter className="p-3" />
+
     </Sidebar>
   );
 }
