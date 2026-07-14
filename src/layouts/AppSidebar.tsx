@@ -44,6 +44,7 @@ const nav = [
 export function AppSidebar() {
   const { pathname } = useLocation();
   const { state } = useSidebar();
+  const { demoMode } = useDemoMode();
   const collapsed = state === "collapsed";
 
   return (
