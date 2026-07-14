@@ -57,17 +57,30 @@ import { analyticsService, campaignService } from "@/services";
 import { approvals, creatives, recommendations } from "@/mocks/data";
 import { formatCompactCurrency, formatCurrency, formatDate, formatNumber } from "@/lib/format";
 import type { Campaign, MetricPoint } from "@/types/proads";
+import { useDemoMode } from "@/contexts/DemoModeContext";
+import { EmptyState } from "@/components/proads/EmptyState";
 import { toast } from "sonner";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { demoMode } = useDemoMode();
   const [series, setSeries] = useState<MetricPoint[]>([]);
   const [campaignList, setCampaignList] = useState<Campaign[]>([]);
 
   useEffect(() => {
+    if (!demoMode) {
+      setSeries([]);
+      setCampaignList([]);
+      return;
+    }
     analyticsService.overview().then(setSeries);
     campaignService.list().then(setCampaignList);
-  }, []);
+  }, [demoMode]);
+
+  const displayApprovals = demoMode ? approvals : [];
+  const displayCreatives = demoMode ? creatives : [];
+  const displayRecommendations = demoMode ? recommendations : [];
+  const activeCampaigns = campaignList.filter((c) => c.status === "ACTIVE");
 
   return (
     <>
