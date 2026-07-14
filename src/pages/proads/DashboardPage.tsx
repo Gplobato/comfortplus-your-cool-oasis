@@ -192,7 +192,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="flex h-full items-center justify-center">
                   <EmptyState
-                    icon={BarChart3 as unknown as typeof Users2}
+                    icon={BarChart3}
                     title="Sem dados de desempenho"
                     description="Conecte uma plataforma de anúncios ou ative o modo demo para visualizar métricas."
                   />
