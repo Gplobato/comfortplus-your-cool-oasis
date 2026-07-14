@@ -98,7 +98,7 @@ export function AppSidebar() {
                         {!collapsed && (
                           <>
                             <span className="flex-1 truncate text-sm">{item.title}</span>
-                            {item.badge && (
+                            {demoMode && item.badge && (
                               <span className="ml-auto rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
                                 {item.badge}
                               </span>
