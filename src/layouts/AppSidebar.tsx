@@ -10,7 +10,6 @@ import {
   Plug,
   History,
   Settings,
-  ChevronRight,
 } from "lucide-react";
 import {
   Sidebar,
@@ -25,9 +24,9 @@ import {
   SidebarHeader,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { Progress } from "@/components/ui/progress";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useDemoMode } from "@/contexts/DemoModeContext";
+
 
 const nav = [
   { title: "Visão Geral", url: "/dashboard", icon: LayoutDashboard },
