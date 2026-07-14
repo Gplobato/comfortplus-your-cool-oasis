@@ -17,8 +17,8 @@ const AnimatedSphere = () => {
     <Float speed={2} rotationIntensity={1.2} floatIntensity={2}>
       <Sphere ref={ref} args={[1.4, 128, 128]}>
         <MeshDistortMaterial
-          color="#5eb8ff"
-          emissive="#0a2fbf"
+          color="#5effa8"
+          emissive="#0abf4f"
           emissiveIntensity={0.6}
           distort={0.45}
           speed={2.2}
@@ -27,7 +27,7 @@ const AnimatedSphere = () => {
         />
       </Sphere>
       <Sphere args={[1.75, 64, 64]}>
-        <meshBasicMaterial color="#3aa0ff" wireframe transparent opacity={0.18} />
+        <meshBasicMaterial color="#3aff80" wireframe transparent opacity={0.18} />
       </Sphere>
     </Float>
   );
@@ -36,8 +36,8 @@ const AnimatedSphere = () => {
 const Scene = () => (
   <Canvas camera={{ position: [0, 0, 5], fov: 45 }} dpr={[1, 2]}>
     <ambientLight intensity={0.4} />
-    <pointLight position={[5, 5, 5]} intensity={2} color="#66d9ff" />
-    <pointLight position={[-5, -3, -2]} intensity={1.5} color="#1e40ff" />
+    <pointLight position={[5, 5, 5]} intensity={2} color="#66ffa8" />
+    <pointLight position={[-5, -3, -2]} intensity={1.5} color="#1eff6b" />
     <Suspense fallback={null}>
       <AnimatedSphere />
       <Stars radius={40} depth={50} count={2500} factor={4} saturation={0} fade speed={1} />
@@ -47,13 +47,13 @@ const Scene = () => (
 
 const Index = () => {
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-[#020617]">
-      {/* Deep space gradient */}
+    <div className="relative min-h-screen w-full overflow-hidden bg-[#02170a]">
+      {/* Deep green gradient */}
       <div
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse at center, #0b1f5c 0%, #050f30 45%, #01030d 100%)",
+            "radial-gradient(ellipse at center, #0b5c2c 0%, #05301a 45%, #010d06 100%)",
         }}
       />
 
@@ -62,7 +62,7 @@ const Index = () => {
         className="absolute inset-0 opacity-30"
         style={{
           backgroundImage:
-            "linear-gradient(rgba(94,184,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(94,184,255,0.08) 1px, transparent 1px)",
+            "linear-gradient(rgba(94,255,168,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(94,255,168,0.08) 1px, transparent 1px)",
           backgroundSize: "60px 60px",
           maskImage: "radial-gradient(ellipse at center, black 30%, transparent 75%)",
           WebkitMaskImage: "radial-gradient(ellipse at center, black 30%, transparent 75%)",
@@ -70,15 +70,15 @@ const Index = () => {
       />
 
       {/* Glow blobs */}
-      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] rounded-full bg-[#3aa0ff]/20 blur-[120px] animate-pulse" />
+      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] rounded-full bg-[#3aff80]/20 blur-[120px] animate-pulse" />
       <div
-        className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] rounded-full bg-[#1e40ff]/25 blur-[120px] animate-pulse"
+        className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] rounded-full bg-[#1eff6b]/25 blur-[120px] animate-pulse"
         style={{ animationDelay: "1.5s" }}
       />
 
       {/* Scan line */}
       <motion.div
-        className="absolute inset-x-0 h-px bg-gradient-to-r from-transparent via-[#66d9ff]/70 to-transparent"
+        className="absolute inset-x-0 h-px bg-gradient-to-r from-transparent via-[#66ffa8]/70 to-transparent"
         animate={{ top: ["0%", "100%"] }}
         transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
       />
@@ -99,7 +99,7 @@ const Index = () => {
           transition={{ duration: 0.8 }}
           className="flex items-center gap-2 text-white/90"
         >
-          <Snowflake className="w-5 h-5 text-[#66d9ff]" />
+          <Snowflake className="w-5 h-5 text-[#66ffa8]" />
           <span className="text-sm font-bold tracking-[0.3em] uppercase">ComfortPlus</span>
         </motion.div>
 
@@ -109,7 +109,7 @@ const Index = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4, duration: 1 }}
-            className="text-[#66d9ff]/70 text-xs tracking-[0.5em] uppercase font-mono"
+            className="text-[#66ffa8]/70 text-xs tracking-[0.5em] uppercase font-mono"
           >
             [ Sistema Inicializando ]
           </motion.div>
@@ -120,21 +120,21 @@ const Index = () => {
             transition={{ delay: 0.6, duration: 1, ease: "easeOut" }}
             className="text-white font-extrabold tracking-tight text-center leading-none"
             style={{
-              fontSize: "clamp(4rem, 18vw, 12rem)",
-              textShadow: "0 0 60px rgba(102,217,255,0.5), 0 0 120px rgba(30,64,255,0.3)",
+              fontSize: "clamp(3rem, 15vw, 10rem)",
+              textShadow: "0 0 60px rgba(102,255,168,0.5), 0 0 120px rgba(30,255,107,0.3)",
               fontFamily: "'Plus Jakarta Sans', sans-serif",
             }}
           >
-            EM{" "}
+            Coming{" "}
             <span
               style={{
-                background: "linear-gradient(135deg, #66d9ff 0%, #3aa0ff 50%, #1e40ff 100%)",
+                background: "linear-gradient(135deg, #66ffa8 0%, #3aff80 50%, #1eff6b 100%)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
               }}
             >
-              BREVE
+              Soon
             </span>
           </motion.h1>
 
@@ -142,7 +142,7 @@ const Index = () => {
             initial={{ opacity: 0, scaleX: 0 }}
             animate={{ opacity: 1, scaleX: 1 }}
             transition={{ delay: 1, duration: 1 }}
-            className="h-px w-64 bg-gradient-to-r from-transparent via-[#66d9ff] to-transparent"
+            className="h-px w-64 bg-gradient-to-r from-transparent via-[#66ffa8] to-transparent"
           />
 
           <motion.p
@@ -163,7 +163,7 @@ const Index = () => {
             {[0, 1, 2].map((i) => (
               <motion.div
                 key={i}
-                className="w-2 h-2 rounded-full bg-[#66d9ff]"
+                className="w-2 h-2 rounded-full bg-[#66ffa8]"
                 animate={{ opacity: [0.3, 1, 0.3] }}
                 transition={{
                   duration: 1.5,
@@ -185,7 +185,7 @@ const Index = () => {
           <span>V1.0.0</span>
           <span className="hidden md:inline">CNPJ 41.353.783/0001-74</span>
           <span className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#66d9ff] animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#66ffa8] animate-pulse" />
             Online
           </span>
         </motion.div>
