@@ -126,12 +126,25 @@ export default function DashboardPage() {
       <div className="space-y-6 p-4 md:p-8">
         {/* Metrics */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-          <MetricCard label="Leads" value={formatNumber(1250)} delta={18.7} icon={Users2} tone="brand" />
-          <MetricCard label="CPL" value="R$ 12,45" delta={-8.3} icon={Target} tone="accent" />
-          <MetricCard label="Investimento" value={formatCompactCurrency(15562.34)} delta={14.2} icon={DollarSign} tone="brand" />
-          <MetricCard label="ROAS" value="4,32x" delta={22.1} icon={TrendingUp} tone="success" />
-          <MetricCard label="Conversões" value={formatNumber(384)} delta={12.4} icon={MousePointerClick} tone="accent" />
-          <MetricCard label="Campanhas ativas" value="12" delta={2.0} icon={Megaphone} tone="warning" />
+          {demoMode ? (
+            <>
+              <MetricCard label="Leads" value={formatNumber(1250)} delta={18.7} icon={Users2} tone="brand" />
+              <MetricCard label="CPL" value="R$ 12,45" delta={-8.3} icon={Target} tone="accent" />
+              <MetricCard label="Investimento" value={formatCompactCurrency(15562.34)} delta={14.2} icon={DollarSign} tone="brand" />
+              <MetricCard label="ROAS" value="4,32x" delta={22.1} icon={TrendingUp} tone="success" />
+              <MetricCard label="Conversões" value={formatNumber(384)} delta={12.4} icon={MousePointerClick} tone="accent" />
+              <MetricCard label="Campanhas ativas" value="12" delta={2.0} icon={Megaphone} tone="warning" />
+            </>
+          ) : (
+            <>
+              <MetricCard label="Leads" value="0" icon={Users2} tone="brand" />
+              <MetricCard label="CPL" value="—" icon={Target} tone="accent" />
+              <MetricCard label="Investimento" value="R$ 0,00" icon={DollarSign} tone="brand" />
+              <MetricCard label="ROAS" value="—" icon={TrendingUp} tone="success" />
+              <MetricCard label="Conversões" value="0" icon={MousePointerClick} tone="accent" />
+              <MetricCard label="Campanhas ativas" value="0" icon={Megaphone} tone="warning" />
+            </>
+          )}
         </div>
 
         {/* Chart + AI Assistant */}
@@ -148,32 +161,42 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="h-72 w-full">
-              <ResponsiveContainer>
-                <LineChart data={series}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={formatDate}
-                    stroke="hsl(var(--muted-foreground))"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
+              {demoMode ? (
+                <ResponsiveContainer>
+                  <LineChart data={series}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={formatDate}
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis yAxisId="left" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                    <Tooltip
+                      contentStyle={{
+                        background: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 12,
+                        fontSize: 12,
+                      }}
+                    />
+                    <Legend wrapperStyle={{ display: "none" }} />
+                    <Line yAxisId="left" type="monotone" dataKey="leads" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={false} />
+                    <Line yAxisId="right" type="monotone" dataKey="cpl" stroke="hsl(var(--accent))" strokeWidth={2.5} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <EmptyState
+                    icon={BarChart3 as unknown as typeof Users2}
+                    title="Sem dados de desempenho"
+                    description="Conecte uma plataforma de anúncios ou ative o modo demo para visualizar métricas."
                   />
-                  <YAxis yAxisId="left" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                  <Tooltip
-                    contentStyle={{
-                      background: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: 12,
-                      fontSize: 12,
-                    }}
-                  />
-                  <Legend wrapperStyle={{ display: "none" }} />
-                  <Line yAxisId="left" type="monotone" dataKey="leads" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={false} />
-                  <Line yAxisId="right" type="monotone" dataKey="cpl" stroke="hsl(var(--accent))" strokeWidth={2.5} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+                </div>
+              )}
             </div>
           </Card>
 
@@ -186,22 +209,31 @@ export default function DashboardPage() {
                 <div>
                   <p className="font-display text-sm font-bold">Assistente ProAds</p>
                   <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                    <span className="h-1.5 w-1.5 rounded-full bg-success" /> Online
+                    <span className={`h-1.5 w-1.5 rounded-full ${demoMode ? "bg-success" : "bg-muted-foreground"}`} />
+                    {demoMode ? "Online" : "Aguardando dados"}
                   </p>
                 </div>
               </div>
             </div>
             <div className="flex-1 space-y-3 p-4">
-              <div className="rounded-lg bg-secondary/60 p-3">
-                <p className="text-xs font-semibold text-muted-foreground">Você</p>
-                <p className="mt-1 text-sm">Analise minhas campanhas e encontre oportunidades de melhoria.</p>
-              </div>
-              <div className="rounded-lg bg-gradient-brand-soft p-3">
-                <p className="text-xs font-semibold text-primary">Diretor de Marketing</p>
-                <p className="mt-1 text-sm">
-                  Identifiquei <strong>3 campanhas</strong> com CPL acima da meta e <strong>2 oportunidades</strong> de aumento de orçamento.
-                </p>
-              </div>
+              {demoMode ? (
+                <>
+                  <div className="rounded-lg bg-secondary/60 p-3">
+                    <p className="text-xs font-semibold text-muted-foreground">Você</p>
+                    <p className="mt-1 text-sm">Analise minhas campanhas e encontre oportunidades de melhoria.</p>
+                  </div>
+                  <div className="rounded-lg bg-gradient-brand-soft p-3">
+                    <p className="text-xs font-semibold text-primary">Diretor de Marketing</p>
+                    <p className="mt-1 text-sm">
+                      Identifiquei <strong>3 campanhas</strong> com CPL acima da meta e <strong>2 oportunidades</strong> de aumento de orçamento.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">
+                  Nenhuma conversa iniciada. Abra o chat para começar.
+                </div>
+              )}
             </div>
             <div className="flex flex-wrap gap-2 border-t border-border p-3">
               <Button size="sm" variant="outline" className="text-xs" onClick={() => navigate("/agente")}>Ver análise</Button>
@@ -219,49 +251,55 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between border-b border-border p-4">
               <div>
                 <h3 className="font-display font-bold">Aprovações pendentes</h3>
-                <p className="text-xs text-muted-foreground">{approvals.length} itens aguardando decisão</p>
+                <p className="text-xs text-muted-foreground">{displayApprovals.length} itens aguardando decisão</p>
               </div>
               <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/aprovacoes")}>
                 Ver todas <ArrowRight className="ml-1 h-3 w-3" />
               </Button>
             </div>
             <div className="divide-y divide-border">
-              {approvals.slice(0, 4).map((a) => (
-                <div key={a.id} className="flex items-center gap-3 p-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-brand-soft">
-                    <Sparkles className="h-4 w-4 text-accent" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{a.title}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {a.requestedBy} · {formatDate(a.createdAt)} ·{" "}
-                      <span className="font-medium text-foreground">
-                        confiança {Math.round(a.confidence * 100)}%
-                      </span>
-                    </p>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className={
-                      a.urgency === "high"
-                        ? "border-destructive/30 bg-destructive/10 text-destructive"
-                        : a.urgency === "medium"
-                        ? "border-warning/30 bg-warning-soft text-warning"
-                        : "border-border bg-muted"
-                    }
-                  >
-                    {a.urgency === "high" ? "Alta" : a.urgency === "medium" ? "Média" : "Baixa"}
-                  </Badge>
-                  <div className="hidden gap-1 md:flex">
-                    <Button size="sm" variant="ghost" className="h-8 gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => toast.error("Rejeitado")}>
-                      <X className="h-3.5 w-3.5" /> Rejeitar
-                    </Button>
-                    <Button size="sm" className="h-8 gap-1 bg-gradient-brand text-primary-foreground" onClick={() => toast.success("Aprovado")}>
-                      <Check className="h-3.5 w-3.5" /> Aprovar
-                    </Button>
-                  </div>
+              {displayApprovals.length === 0 ? (
+                <div className="p-8 text-center text-xs text-muted-foreground">
+                  Nenhuma aprovação pendente.
                 </div>
-              ))}
+              ) : (
+                displayApprovals.slice(0, 4).map((a) => (
+                  <div key={a.id} className="flex items-center gap-3 p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-brand-soft">
+                      <Sparkles className="h-4 w-4 text-accent" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{a.title}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {a.requestedBy} · {formatDate(a.createdAt)} ·{" "}
+                        <span className="font-medium text-foreground">
+                          confiança {Math.round(a.confidence * 100)}%
+                        </span>
+                      </p>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={
+                        a.urgency === "high"
+                          ? "border-destructive/30 bg-destructive/10 text-destructive"
+                          : a.urgency === "medium"
+                          ? "border-warning/30 bg-warning-soft text-warning"
+                          : "border-border bg-muted"
+                      }
+                    >
+                      {a.urgency === "high" ? "Alta" : a.urgency === "medium" ? "Média" : "Baixa"}
+                    </Badge>
+                    <div className="hidden gap-1 md:flex">
+                      <Button size="sm" variant="ghost" className="h-8 gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => toast.error("Rejeitado")}>
+                        <X className="h-3.5 w-3.5" /> Rejeitar
+                      </Button>
+                      <Button size="sm" className="h-8 gap-1 bg-gradient-brand text-primary-foreground" onClick={() => toast.success("Aprovado")}>
+                        <Check className="h-3.5 w-3.5" /> Aprovar
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </Card>
 
@@ -274,18 +312,24 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="divide-y divide-border">
-              {recommendations.map((r) => (
-                <div key={r.id} className="p-4">
-                  <p className="text-sm font-semibold">{r.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{r.explanation}</p>
-                  <div className="mt-2 flex items-center justify-between">
-                    <Badge variant="outline" className="bg-success-soft text-success">{r.impact}</Badge>
-                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => toast.success("Sugestão aplicada")}>
-                      Aplicar sugestão
-                    </Button>
-                  </div>
+              {displayRecommendations.length === 0 ? (
+                <div className="p-8 text-center text-xs text-muted-foreground">
+                  Sem sugestões no momento.
                 </div>
-              ))}
+              ) : (
+                displayRecommendations.map((r) => (
+                  <div key={r.id} className="p-4">
+                    <p className="text-sm font-semibold">{r.title}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{r.explanation}</p>
+                    <div className="mt-2 flex items-center justify-between">
+                      <Badge variant="outline" className="bg-success-soft text-success">{r.impact}</Badge>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => toast.success("Sugestão aplicada")}>
+                        Aplicar sugestão
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </Card>
         </div>
@@ -297,17 +341,23 @@ export default function DashboardPage() {
               <h3 className="font-display font-bold">Criativos recentes</h3>
               <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/criativos")}>Ver todos</Button>
             </div>
-            <div className="grid grid-cols-2 gap-3 p-4">
-              {creatives.slice(0, 4).map((c) => (
-                <div key={c.id} className="group cursor-pointer" onClick={() => navigate(`/criativos/${c.id}`)}>
-                  <div className="aspect-square overflow-hidden rounded-lg bg-muted">
-                    <img src={c.thumbnailUrl} alt={c.name} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+            {displayCreatives.length === 0 ? (
+              <div className="p-8 text-center text-xs text-muted-foreground">
+                Nenhum criativo cadastrado.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 p-4">
+                {displayCreatives.slice(0, 4).map((c) => (
+                  <div key={c.id} className="group cursor-pointer" onClick={() => navigate(`/criativos/${c.id}`)}>
+                    <div className="aspect-square overflow-hidden rounded-lg bg-muted">
+                      <img src={c.thumbnailUrl} alt={c.name} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                    </div>
+                    <p className="mt-1.5 truncate text-xs font-semibold">{c.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{c.format}</p>
                   </div>
-                  <p className="mt-1.5 truncate text-xs font-semibold">{c.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{c.format}</p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card className="shadow-card lg:col-span-2">
@@ -318,22 +368,24 @@ export default function DashboardPage() {
               </Button>
             </div>
             <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-border hover:bg-transparent">
-                    <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Campanha</TableHead>
-                    <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Leads</TableHead>
-                    <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">CPL</TableHead>
-                    <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Investimento</TableHead>
-                    <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Status</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {campaignList
-                    .filter((c) => c.status === "ACTIVE")
-                    .slice(0, 5)
-                    .map((c) => (
+              {activeCampaigns.length === 0 ? (
+                <div className="p-8 text-center text-xs text-muted-foreground">
+                  Nenhuma campanha ativa.
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border hover:bg-transparent">
+                      <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Campanha</TableHead>
+                      <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Leads</TableHead>
+                      <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">CPL</TableHead>
+                      <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Investimento</TableHead>
+                      <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Status</TableHead>
+                      <TableHead />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {activeCampaigns.slice(0, 5).map((c) => (
                       <TableRow key={c.id} className="cursor-pointer border-border" onClick={() => navigate(`/campanhas/${c.id}`)}>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -363,8 +415,9 @@ export default function DashboardPage() {
                         </TableCell>
                       </TableRow>
                     ))}
-                </TableBody>
-              </Table>
+                  </TableBody>
+                </Table>
+              )}
             </div>
           </Card>
         </div>
