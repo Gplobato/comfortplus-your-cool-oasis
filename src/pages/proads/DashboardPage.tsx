@@ -90,6 +90,29 @@ export default function DashboardPage() {
         description="Acompanhe campanhas, criativos e recomendações da inteligência artificial."
         actions={
           <>
+            <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-2.5">
+              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-[#1877F2] text-[10px] font-bold text-white">
+                f
+              </span>
+              <div className="hidden leading-tight sm:block">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Conta Meta
+                </p>
+                <p className="flex items-center gap-1 text-[11px] font-semibold">
+                  <span className={`h-1.5 w-1.5 rounded-full ${demoMode ? "bg-success" : "bg-muted-foreground"}`} />
+                  {demoMode ? "ProAds BR · Conectada" : "Não conectada"}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-[11px]"
+                onClick={() => navigate("/integracoes")}
+              >
+                Trocar <ArrowRight className="h-3 w-3" />
+              </Button>
+            </div>
+
             <Select defaultValue="14d">
               <SelectTrigger className="h-9 w-[150px] bg-card"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -113,12 +136,28 @@ export default function DashboardPage() {
               size="sm"
               className="h-9 gap-2"
               onClick={() => {
-                analyticsService.overview().then(setSeries);
+                if (demoMode) analyticsService.overview().then(setSeries);
                 toast.success("Dados atualizados");
               }}
             >
               <RefreshCw className="h-3.5 w-3.5" />
               Atualizar
+            </Button>
+            <Button
+              size="sm"
+              className="h-9 gap-2 bg-gradient-brand text-primary-foreground shadow-brand"
+              onClick={() => {
+                toast.loading("Sincronizando com CRM...", { id: "crm-sync" });
+                setTimeout(() => {
+                  toast.success(
+                    demoMode ? "CRM sincronizado · 42 leads atualizados" : "Nenhum lead para sincronizar",
+                    { id: "crm-sync" },
+                  );
+                }, 1200);
+              }}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Sincronizar CRM
             </Button>
           </>
         }
