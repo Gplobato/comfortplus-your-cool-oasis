@@ -14,6 +14,7 @@ import {
   X,
   MessageSquare,
   MoreHorizontal,
+  BarChart3,
 } from "lucide-react";
 import {
   ResponsiveContainer,
