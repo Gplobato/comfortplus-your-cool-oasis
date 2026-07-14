@@ -191,6 +191,8 @@ export interface AgentMessage {
   toolsUsed?: AgentToolExecution[];
   actions?: { label: string; kind: "primary" | "secondary" | "ghost" }[];
   status?: "sending" | "sent" | "error";
+  imageUrl?: string;
+  modelUsed?: string;
 }
 
 export interface AgentConversation {
