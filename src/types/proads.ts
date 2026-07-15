@@ -194,6 +194,12 @@ export interface AgentMessage {
   imageUrl?: string;
   images?: { url: string; format: string; label?: string }[];
   videoUrl?: string;
+  videoJob?: { runId: string; model: string; prompt: string };
+  videoStatus?: "queued" | "processing" | "completed" | "failed";
+  videoProgress?: number | null;
+  videoError?: string;
+  videoStartedAt?: string;
+  phases?: { label: string; agent: AgentRole }[];
   workingSteps?: { agent: AgentRole; label: string }[];
   modelUsed?: string;
 }
