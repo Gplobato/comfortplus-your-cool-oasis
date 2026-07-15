@@ -71,16 +71,17 @@ const IMAGE_MODELS = [
 ];
 
 const VIDEO_MODELS = [
-  { value: "veo-3", label: "Veo 3 (padrão)" },
-  { value: "runway-gen4", label: "Runway Gen-4" },
-  { value: "kling-2", label: "Kling 2" },
+  { value: "happyhorse-1.1", label: "HappyHorse 1.1 (padrão)" },
+  { value: "veo3-video", label: "Veo 3" },
+  { value: "kling-v26-pro", label: "Kling 2.6 Pro" },
+  { value: "seedance-video", label: "Seedance" },
 ];
 
 const suggestions = [
   "Analise minhas campanhas Meta",
-  "Crie um plano de mídia para lançar um novo produto",
-  "Gere um criativo de anúncio com nossa logo",
-  "Faça um vídeo curto de 5s para reels",
+  "Crie um criativo em vídeo com narração sobre a Obras Timelapse",
+  "Gere um anúncio de imagem com nossa logo",
+  "Faça um vídeo curto 9:16 para reels",
   "Pesquise 3 concorrentes fortes no meu nicho",
 ];
 
@@ -99,8 +100,11 @@ const STATUS_BY_INTENT: Record<"chat" | "image" | "video", { agent: AgentRole; l
     { agent: "copywriter", label: "Copywriter revisando o texto do anúncio…" },
   ],
   video: [
-    { agent: "creative_director", label: "Diretor de Arte roteirizando as cenas…" },
-    { agent: "creative_director", label: "Renderizando storyboard animado…" },
+    { agent: "strategist", label: "Estrategista definindo ângulo e público…" },
+    { agent: "copywriter", label: "Roteirista escrevendo a narração…" },
+    { agent: "creative_director", label: "Diretor de Arte criando o frame-âncora…" },
+    { agent: "creative_director", label: "HappyHorse 1.1 renderizando o vídeo…" },
+    { agent: "creative_director", label: "Renderizando movimento e transições…" },
     { agent: "media_buyer", label: "Media Buyer preparando entrega…" },
   ],
 };
@@ -108,8 +112,8 @@ const STATUS_BY_INTENT: Record<"chat" | "image" | "video", { agent: AgentRole; l
 function detectIntent(text: string, forced?: "image" | "video"): "chat" | "image" | "video" {
   if (forced) return forced;
   const t = text.toLowerCase();
-  if (/\b(v[íi]deo|reels?|film[ea]|animação)\b/.test(t)) return "video";
-  if (/\b(imagem|criativo|anúncio|foto|banner|mockup|arte|design)\b/.test(t)) return "image";
+  if (/\b(v[íi]deo|reels?|film[ea]|animaç[ãa]o|narra[çc][ãa]o|roteiro|storyboard)\b/.test(t)) return "video";
+  if (/\b(imagem|criativo|an[úu]ncio|foto|banner|mockup|arte|design)\b/.test(t)) return "image";
   return "chat";
 }
 
@@ -133,7 +137,7 @@ export default function AgentPage() {
   const [loading, setLoading] = useState(false);
   const [textModel, setTextModel] = useState("zai-org/glm-5.2");
   const [imageModel, setImageModel] = useState("gpt-image-2");
-  const [videoModel, setVideoModel] = useState("veo-3");
+  const [videoModel, setVideoModel] = useState("happyhorse-1.1");
   const [forceMode, setForceMode] = useState<"auto" | "image" | "video">("auto");
   const [useBrandLogo, setUseBrandLogo] = useState(true);
   const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);
