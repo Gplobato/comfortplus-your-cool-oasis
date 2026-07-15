@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { useDemoMode } from "@/contexts/DemoModeContext";
+import proadsIcon from "@/assets/proads-icon.png.asset.json";
 
 
 const nav = [
