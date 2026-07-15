@@ -79,9 +79,9 @@ const VIDEO_MODELS = [
 
 const suggestions = [
   "Analise minhas campanhas Meta",
-  "Crie um plano de mídia para lançar um novo produto",
-  "Gere um criativo de anúncio com nossa logo",
-  "Faça um vídeo curto de 5s para reels",
+  "Crie um criativo em vídeo com narração sobre a Obras Timelapse",
+  "Gere um anúncio de imagem com nossa logo",
+  "Faça um vídeo curto 9:16 para reels",
   "Pesquise 3 concorrentes fortes no meu nicho",
 ];
 
