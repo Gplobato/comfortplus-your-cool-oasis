@@ -143,6 +143,8 @@ export default function AgentPage() {
   const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);
   const [statusStep, setStatusStep] = useState(0);
   const [statusIntent, setStatusIntent] = useState<"chat" | "image" | "video">("chat");
+  const [elapsed, setElapsed] = useState(0);
+  const startedAtRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -166,13 +168,98 @@ export default function AgentPage() {
     textareaRef.current?.focus();
   }, [activeId]);
 
-  // Rotate status while loading
+  // Rotate status + elapsed timer while loading
   useEffect(() => {
-    if (!loading) return;
+    if (!loading) {
+      setElapsed(0);
+      startedAtRef.current = null;
+      return;
+    }
+    startedAtRef.current = Date.now();
     const steps = STATUS_BY_INTENT[statusIntent];
-    const t = setInterval(() => setStatusStep((s) => (s + 1) % steps.length), 1600);
-    return () => clearInterval(t);
+    const rot = setInterval(() => setStatusStep((s) => (s + 1) % steps.length), 1600);
+    const tick = setInterval(
+      () => setElapsed(Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000)),
+      500,
+    );
+    return () => {
+      clearInterval(rot);
+      clearInterval(tick);
+    };
   }, [loading, statusIntent]);
+
+  // Poll pending video jobs across all threads
+  useEffect(() => {
+    const pending: { threadId: string; msgId: string; runId: string }[] = [];
+    threads.forEach((t) => {
+      t.messages.forEach((m) => {
+        if (m.videoJob && !m.videoUrl && m.videoStatus !== "failed") {
+          pending.push({ threadId: t.id, msgId: m.id, runId: m.videoJob.runId });
+        }
+      });
+    });
+    if (!pending.length) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      for (const p of pending) {
+        try {
+          const { data, error } = await supabase.functions.invoke("nanogpt-video-status", {
+            body: { runId: p.runId },
+          });
+          if (cancelled) return;
+          if (error) continue;
+          const s = data?.status as string | undefined;
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id !== p.threadId
+                ? t
+                : {
+                    ...t,
+                    messages: t.messages.map((m) => {
+                      if (m.id !== p.msgId) return m;
+                      if (s === "completed" && data?.videoUrl) {
+                        return {
+                          ...m,
+                          videoUrl: data.videoUrl,
+                          videoStatus: "completed",
+                          videoProgress: 100,
+                          content: m.content.replace(
+                            /Job de vídeo enviado[^\n]*/,
+                            "Vídeo pronto:",
+                          ),
+                        };
+                      }
+                      if (s === "failed") {
+                        return {
+                          ...m,
+                          videoStatus: "failed",
+                          videoError: data?.error ?? "Falha desconhecida",
+                        };
+                      }
+                      return {
+                        ...m,
+                        videoStatus: (s as any) ?? "processing",
+                        videoProgress: data?.progress ?? m.videoProgress ?? null,
+                      };
+                    }),
+                  },
+            ),
+          );
+          if (s === "completed") toast.success("Vídeo pronto");
+          if (s === "failed") toast.error(`Vídeo falhou: ${data?.error ?? ""}`);
+        } catch {
+          /* keep polling */
+        }
+      }
+    };
+    poll();
+    const iv = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [threads]);
 
   const updateThread = (id: string, patch: (t: AgentThread) => AgentThread) => {
     setThreads((prev) => prev.map((t) => (t.id === id ? patch(t) : t)));
@@ -285,23 +372,29 @@ export default function AgentPage() {
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
-      const hasVisual = !!(data?.images?.length || data?.videoUrl);
+      const hasVisual = !!(data?.images?.length || data?.videoUrl || data?.videoJob);
       const replyMsg: AgentMessage = {
         id: `a_${Date.now()}`,
         role: "assistant",
         agent: hasVisual ? "creative_director" : "director",
         content:
           data?.text ||
-          (data?.images?.length
-            ? "Aqui estão as duas variantes prontas para Facebook Ads:"
-            : data?.videoUrl
-              ? "Aqui está o vídeo que preparei:"
-              : "(sem resposta)"),
+          (data?.videoJob
+            ? "Job de vídeo enviado. Renderizando abaixo — pode levar 1–4 min."
+            : data?.images?.length
+              ? "Aqui estão as duas variantes prontas para Facebook Ads:"
+              : data?.videoUrl
+                ? "Aqui está o vídeo que preparei:"
+                : "(sem resposta)"),
         createdAt: new Date().toISOString(),
         status: "sent",
         images: data?.images,
         videoUrl: data?.videoUrl,
-        modelUsed: data?.videoUrl ? videoModel : hasVisual ? imageModel : textModel,
+        videoJob: data?.videoJob,
+        videoStatus: data?.videoJob ? "queued" : undefined,
+        videoStartedAt: data?.videoJob ? new Date().toISOString() : undefined,
+        phases: data?.phases,
+        modelUsed: data?.videoJob || data?.videoUrl ? videoModel : hasVisual ? imageModel : textModel,
       };
 
       updateThread(active.id, (t) => ({
@@ -447,6 +540,7 @@ export default function AgentPage() {
                   label={currentStatus.label}
                   steps={STATUS_BY_INTENT[statusIntent]}
                   current={statusStep}
+                  elapsed={elapsed}
                 />
               )}
               <div ref={endRef} />
@@ -674,11 +768,13 @@ function WorkingIndicator({
   label,
   steps,
   current,
+  elapsed,
 }: {
   agent: AgentRole;
   label: string;
   steps: { agent: AgentRole; label: string }[];
   current: number;
+  elapsed: number;
 }) {
   return (
     <div className="flex items-start gap-3">
@@ -687,9 +783,14 @@ function WorkingIndicator({
         <span className="absolute -inset-0.5 animate-ping rounded-lg bg-primary/30" />
       </div>
       <div className="flex-1 space-y-2">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-accent">
-          {agentLabels[agent]}
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-accent">
+            {agentLabels[agent]}
+          </p>
+          <p className="text-[10px] font-mono text-muted-foreground">
+            {String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}
+          </p>
+        </div>
         <div className="rounded-2xl border border-primary/20 bg-gradient-brand-soft px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="flex gap-1">
@@ -714,6 +815,29 @@ function WorkingIndicator({
               />
             ))}
           </div>
+          <ol className="mt-3 space-y-1">
+            {steps.map((s, i) => (
+              <li
+                key={i}
+                className={cn(
+                  "flex items-center gap-2 text-[11px] transition-colors",
+                  i < current
+                    ? "text-muted-foreground line-through decoration-primary/40"
+                    : i === current
+                      ? "font-semibold text-foreground"
+                      : "text-muted-foreground/60",
+                )}
+              >
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    i < current ? "bg-primary" : i === current ? "bg-primary animate-pulse" : "bg-primary/20",
+                  )}
+                />
+                {agentLabels[s.agent]} — {s.label}
+              </li>
+            ))}
+          </ol>
         </div>
       </div>
     </div>
@@ -787,6 +911,17 @@ function MessageBubble({
           </div>
         )}
 
+        {/* Video pending job */}
+        {message.videoJob && !message.videoUrl && (
+          <VideoJobCard
+            model={message.videoJob.model}
+            status={message.videoStatus ?? "queued"}
+            progress={message.videoProgress ?? null}
+            error={message.videoError}
+            startedAt={message.videoStartedAt}
+          />
+        )}
+
         {/* Video */}
         {message.videoUrl && (
           <div className="overflow-hidden rounded-2xl border border-border bg-card">
@@ -856,6 +991,74 @@ function ImageResult({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+    </div>
+  );
+}
+
+function VideoJobCard({
+  model,
+  status,
+  progress,
+  error,
+  startedAt,
+}: {
+  model: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  progress: number | null;
+  error?: string;
+  startedAt?: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (status === "completed" || status === "failed") return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [status]);
+  const startMs = startedAt ? new Date(startedAt).getTime() : now;
+  const secs = Math.max(0, Math.round((now - startMs) / 1000));
+  const mm = String(Math.floor(secs / 60)).padStart(2, "0");
+  const ss = String(secs % 60).padStart(2, "0");
+  const pct = progress != null ? Math.max(0, Math.min(100, Math.round(progress))) : null;
+
+  if (status === "failed") {
+    return (
+      <div className="rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <p className="font-semibold">⚠️ Vídeo falhou</p>
+        <p className="mt-1 text-xs">{error ?? "Erro desconhecido"}</p>
+      </div>
+    );
+  }
+
+  const label =
+    status === "queued"
+      ? "Job na fila do NanoGPT…"
+      : status === "processing"
+        ? "Renderizando frames…"
+        : "Finalizando…";
+
+  return (
+    <div className="rounded-2xl border border-primary/20 bg-gradient-brand-soft px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Film className="h-4 w-4 text-primary" />
+          <p className="text-sm font-semibold text-foreground">{label}</p>
+        </div>
+        <span className="font-mono text-[11px] text-muted-foreground">{mm}:{ss}</span>
+      </div>
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-primary/10">
+        <div
+          className={cn(
+            "h-full rounded-full bg-primary transition-all",
+            pct == null && "animate-pulse",
+          )}
+          style={{ width: pct != null ? `${pct}%` : "35%" }}
+        />
+      </div>
+      <p className="mt-2 text-[10px] text-muted-foreground">
+        Modelo: <span className="font-mono">{model}</span>
+        {pct != null && <> · {pct}%</>}
+        {" · "}vídeo assíncrono — você pode continuar conversando enquanto renderiza.
+      </p>
     </div>
   );
 }
