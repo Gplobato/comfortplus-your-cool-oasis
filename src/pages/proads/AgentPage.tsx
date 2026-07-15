@@ -768,11 +768,13 @@ function WorkingIndicator({
   label,
   steps,
   current,
+  elapsed,
 }: {
   agent: AgentRole;
   label: string;
   steps: { agent: AgentRole; label: string }[];
   current: number;
+  elapsed: number;
 }) {
   return (
     <div className="flex items-start gap-3">
@@ -781,9 +783,14 @@ function WorkingIndicator({
         <span className="absolute -inset-0.5 animate-ping rounded-lg bg-primary/30" />
       </div>
       <div className="flex-1 space-y-2">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-accent">
-          {agentLabels[agent]}
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-accent">
+            {agentLabels[agent]}
+          </p>
+          <p className="text-[10px] font-mono text-muted-foreground">
+            {String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}
+          </p>
+        </div>
         <div className="rounded-2xl border border-primary/20 bg-gradient-brand-soft px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="flex gap-1">
@@ -808,6 +815,29 @@ function WorkingIndicator({
               />
             ))}
           </div>
+          <ol className="mt-3 space-y-1">
+            {steps.map((s, i) => (
+              <li
+                key={i}
+                className={cn(
+                  "flex items-center gap-2 text-[11px] transition-colors",
+                  i < current
+                    ? "text-muted-foreground line-through decoration-primary/40"
+                    : i === current
+                      ? "font-semibold text-foreground"
+                      : "text-muted-foreground/60",
+                )}
+              >
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    i < current ? "bg-primary" : i === current ? "bg-primary animate-pulse" : "bg-primary/20",
+                  )}
+                />
+                {agentLabels[s.agent]} — {s.label}
+              </li>
+            ))}
+          </ol>
         </div>
       </div>
     </div>
