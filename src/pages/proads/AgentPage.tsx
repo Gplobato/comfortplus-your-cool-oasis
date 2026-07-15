@@ -143,6 +143,8 @@ export default function AgentPage() {
   const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);
   const [statusStep, setStatusStep] = useState(0);
   const [statusIntent, setStatusIntent] = useState<"chat" | "image" | "video">("chat");
+  const [elapsed, setElapsed] = useState(0);
+  const startedAtRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -166,13 +168,98 @@ export default function AgentPage() {
     textareaRef.current?.focus();
   }, [activeId]);
 
-  // Rotate status while loading
+  // Rotate status + elapsed timer while loading
   useEffect(() => {
-    if (!loading) return;
+    if (!loading) {
+      setElapsed(0);
+      startedAtRef.current = null;
+      return;
+    }
+    startedAtRef.current = Date.now();
     const steps = STATUS_BY_INTENT[statusIntent];
-    const t = setInterval(() => setStatusStep((s) => (s + 1) % steps.length), 1600);
-    return () => clearInterval(t);
+    const rot = setInterval(() => setStatusStep((s) => (s + 1) % steps.length), 1600);
+    const tick = setInterval(
+      () => setElapsed(Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000)),
+      500,
+    );
+    return () => {
+      clearInterval(rot);
+      clearInterval(tick);
+    };
   }, [loading, statusIntent]);
+
+  // Poll pending video jobs across all threads
+  useEffect(() => {
+    const pending: { threadId: string; msgId: string; runId: string }[] = [];
+    threads.forEach((t) => {
+      t.messages.forEach((m) => {
+        if (m.videoJob && !m.videoUrl && m.videoStatus !== "failed") {
+          pending.push({ threadId: t.id, msgId: m.id, runId: m.videoJob.runId });
+        }
+      });
+    });
+    if (!pending.length) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      for (const p of pending) {
+        try {
+          const { data, error } = await supabase.functions.invoke("nanogpt-video-status", {
+            body: { runId: p.runId },
+          });
+          if (cancelled) return;
+          if (error) continue;
+          const s = data?.status as string | undefined;
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id !== p.threadId
+                ? t
+                : {
+                    ...t,
+                    messages: t.messages.map((m) => {
+                      if (m.id !== p.msgId) return m;
+                      if (s === "completed" && data?.videoUrl) {
+                        return {
+                          ...m,
+                          videoUrl: data.videoUrl,
+                          videoStatus: "completed",
+                          videoProgress: 100,
+                          content: m.content.replace(
+                            /Job de vídeo enviado[^\n]*/,
+                            "Vídeo pronto:",
+                          ),
+                        };
+                      }
+                      if (s === "failed") {
+                        return {
+                          ...m,
+                          videoStatus: "failed",
+                          videoError: data?.error ?? "Falha desconhecida",
+                        };
+                      }
+                      return {
+                        ...m,
+                        videoStatus: (s as any) ?? "processing",
+                        videoProgress: data?.progress ?? m.videoProgress ?? null,
+                      };
+                    }),
+                  },
+            ),
+          );
+          if (s === "completed") toast.success("Vídeo pronto");
+          if (s === "failed") toast.error(`Vídeo falhou: ${data?.error ?? ""}`);
+        } catch {
+          /* keep polling */
+        }
+      }
+    };
+    poll();
+    const iv = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [threads]);
 
   const updateThread = (id: string, patch: (t: AgentThread) => AgentThread) => {
     setThreads((prev) => prev.map((t) => (t.id === id ? patch(t) : t)));
@@ -453,6 +540,7 @@ export default function AgentPage() {
                   label={currentStatus.label}
                   steps={STATUS_BY_INTENT[statusIntent]}
                   current={statusStep}
+                  elapsed={elapsed}
                 />
               )}
               <div ref={endRef} />
