@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Bell, Command, Plus, Search, Sparkles } from "lucide-react";
+import { Bell, Building2, Check, Command, Plus, Search, Sparkles } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -15,13 +15,29 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { notifications } from "@/mocks/data";
 import { useDemoMode } from "@/contexts/DemoModeContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { toast } from "sonner";
 
 export function AppHeader() {
   const navigate = useNavigate();
   const { demoMode, setDemoMode } = useDemoMode();
+  const { user, signOut } = useAuth();
+  const { organizations, activeOrg, setActiveOrg } = useOrganization();
 
   const unread = demoMode ? notifications.filter((n) => !n.read).length : 0;
+  const displayName =
+    (user?.user_metadata?.full_name as string | undefined) ??
+    (user?.user_metadata?.name as string | undefined) ??
+    user?.email ??
+    "Usuário";
+  const initials = displayName
+    .split(" ")
+    .map((s) => s[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "US";
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur-xl md:px-6">
