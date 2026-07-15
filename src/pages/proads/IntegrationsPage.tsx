@@ -86,17 +86,14 @@ function MetaCard() {
   const load = useCallback(async () => {
     if (!activeOrg) return;
     setLoading(true);
-    const { data, error } = await supabase.functions.invoke("meta-connection", {
-      body: undefined,
-      method: "GET" as any,
-      // Edge function reads organization_id from query — invoke doesn't support query, use fetch
-    });
-    // supabase-js invoke doesn't do GET with query easily; call directly:
     try {
       const session = (await supabase.auth.getSession()).data.session;
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-connection?action=status&organization_id=${activeOrg.id}`;
       const r = await fetch(url, {
-        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+        headers: {
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
