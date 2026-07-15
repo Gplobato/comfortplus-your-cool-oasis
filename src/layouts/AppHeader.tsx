@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Bell, Command, Plus, Search, Sparkles } from "lucide-react";
+import { Bell, Building2, Check, Command, Plus, Search, Sparkles } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -15,13 +15,29 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { notifications } from "@/mocks/data";
 import { useDemoMode } from "@/contexts/DemoModeContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { toast } from "sonner";
 
 export function AppHeader() {
   const navigate = useNavigate();
   const { demoMode, setDemoMode } = useDemoMode();
+  const { user, signOut } = useAuth();
+  const { organizations, activeOrg, setActiveOrg } = useOrganization();
 
   const unread = demoMode ? notifications.filter((n) => !n.read).length : 0;
+  const displayName =
+    (user?.user_metadata?.full_name as string | undefined) ??
+    (user?.user_metadata?.name as string | undefined) ??
+    user?.email ??
+    "Usuário";
+  const initials = displayName
+    .split(" ")
+    .map((s) => s[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "US";
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur-xl md:px-6">
@@ -54,9 +70,30 @@ export function AppHeader() {
             }}
           />
         </div>
-
-
-
+        {activeOrg && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="hidden h-9 gap-2 md:inline-flex">
+                <Building2 className="h-3.5 w-3.5" />
+                <span className="max-w-[160px] truncate text-xs">{activeOrg.name}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel>Organizações</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {organizations.map((org) => (
+                <DropdownMenuItem key={org.id} onClick={() => setActiveOrg(org)}>
+                  <span className="flex-1 truncate">{org.name}</span>
+                  {org.id === activeOrg.id && <Check className="ml-2 h-3.5 w-3.5" />}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate("/onboarding")}>
+                + Nova organização
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -94,12 +131,12 @@ export function AppHeader() {
             <Button variant="ghost" className="h-10 gap-2.5 rounded-full px-1.5 pr-3">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-gradient-brand text-xs font-bold text-white">
-                  GA
+                  {initials}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden text-left leading-tight md:block">
-                <p className="text-xs font-semibold">Gabriel</p>
-                <p className="text-[10px] text-muted-foreground">Administrador</p>
+                <p className="max-w-[140px] truncate text-xs font-semibold">{displayName}</p>
+                <p className="text-[10px] text-muted-foreground">{user?.email}</p>
               </div>
             </Button>
           </DropdownMenuTrigger>
@@ -116,7 +153,13 @@ export function AppHeader() {
               Segurança
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => toast.info("Sessão encerrada (simulação)")}>
+            <DropdownMenuItem
+              onClick={async () => {
+                await signOut();
+                toast.success("Sessão encerrada");
+                navigate("/login", { replace: true });
+              }}
+            >
               Sair
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -133,3 +176,4 @@ export function AppHeader() {
     </header>
   );
 }
+
