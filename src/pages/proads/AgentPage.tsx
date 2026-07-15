@@ -100,8 +100,11 @@ const STATUS_BY_INTENT: Record<"chat" | "image" | "video", { agent: AgentRole; l
     { agent: "copywriter", label: "Copywriter revisando o texto do anúncio…" },
   ],
   video: [
-    { agent: "creative_director", label: "Diretor de Arte roteirizando as cenas…" },
-    { agent: "creative_director", label: "Renderizando storyboard animado…" },
+    { agent: "strategist", label: "Estrategista definindo ângulo e público…" },
+    { agent: "copywriter", label: "Roteirista escrevendo a narração…" },
+    { agent: "creative_director", label: "Diretor de Arte criando o frame-âncora…" },
+    { agent: "creative_director", label: "HappyHorse 1.1 renderizando o vídeo…" },
+    { agent: "creative_director", label: "Renderizando movimento e transições…" },
     { agent: "media_buyer", label: "Media Buyer preparando entrega…" },
   ],
 };
@@ -109,8 +112,8 @@ const STATUS_BY_INTENT: Record<"chat" | "image" | "video", { agent: AgentRole; l
 function detectIntent(text: string, forced?: "image" | "video"): "chat" | "image" | "video" {
   if (forced) return forced;
   const t = text.toLowerCase();
-  if (/\b(v[íi]deo|reels?|film[ea]|animação)\b/.test(t)) return "video";
-  if (/\b(imagem|criativo|anúncio|foto|banner|mockup|arte|design)\b/.test(t)) return "image";
+  if (/\b(v[íi]deo|reels?|film[ea]|animaç[ãa]o|narra[çc][ãa]o|roteiro|storyboard)\b/.test(t)) return "video";
+  if (/\b(imagem|criativo|an[úu]ncio|foto|banner|mockup|arte|design)\b/.test(t)) return "image";
   return "chat";
 }
 
