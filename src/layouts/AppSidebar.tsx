@@ -10,6 +10,7 @@ import {
   Plug,
   History,
   Settings,
+  ExternalLink,
 } from "lucide-react";
 import {
   Sidebar,
@@ -117,7 +118,23 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-3" />
+      <SidebarFooter className="p-3">
+        <a
+          href="https://promonitor.lovable.app"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(
+            "group flex items-center gap-2.5 rounded-lg bg-gradient-brand px-3 py-2.5 text-primary-foreground shadow-brand transition-opacity hover:opacity-95",
+            collapsed && "justify-center px-0",
+          )}
+        >
+          <ExternalLink className="h-4 w-4 shrink-0" />
+          {!collapsed && (
+            <span className="flex-1 truncate text-sm font-semibold">Abrir ProMonitor</span>
+          )}
+        </a>
+      </SidebarFooter>
+
 
     </Sidebar>
   );
