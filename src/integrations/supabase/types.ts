@@ -14,16 +14,715 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      action_executions: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          error_code: string | null
+          error_message_sanitized: string | null
+          id: string
+          idempotency_key: string
+          organization_id: string
+          proposal_id: string
+          rollback_reference: string | null
+          sanitized_arguments: Json
+          sanitized_result: Json | null
+          started_at: string | null
+          status: Database["public"]["Enums"]["execution_status"]
+          tool_name: string
+          verification_status: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          error_code?: string | null
+          error_message_sanitized?: string | null
+          id?: string
+          idempotency_key: string
+          organization_id: string
+          proposal_id: string
+          rollback_reference?: string | null
+          sanitized_arguments?: Json
+          sanitized_result?: Json | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["execution_status"]
+          tool_name: string
+          verification_status?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          error_code?: string | null
+          error_message_sanitized?: string | null
+          id?: string
+          idempotency_key?: string
+          organization_id?: string
+          proposal_id?: string
+          rollback_reference?: string | null
+          sanitized_arguments?: Json
+          sanitized_result?: Json | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["execution_status"]
+          tool_name?: string
+          verification_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "action_executions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_executions_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "action_proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      action_proposals: {
+        Row: {
+          action_type: string
+          ad_account_asset_id: string | null
+          created_at: string
+          created_by_agent: string | null
+          current_state: Json | null
+          diff: Json | null
+          estimated_impact: string | null
+          expires_at: string | null
+          explanation: string | null
+          id: string
+          organization_id: string
+          proposed_arguments: Json
+          proposed_state: Json | null
+          rationale: string | null
+          requested_by_user_id: string | null
+          reviewed_at: string | null
+          reviewed_by_user_id: string | null
+          risk_level: Database["public"]["Enums"]["risk_level"]
+          status: Database["public"]["Enums"]["proposal_status"]
+          title: string
+          tool_name: string
+          updated_at: string
+        }
+        Insert: {
+          action_type: string
+          ad_account_asset_id?: string | null
+          created_at?: string
+          created_by_agent?: string | null
+          current_state?: Json | null
+          diff?: Json | null
+          estimated_impact?: string | null
+          expires_at?: string | null
+          explanation?: string | null
+          id?: string
+          organization_id: string
+          proposed_arguments?: Json
+          proposed_state?: Json | null
+          rationale?: string | null
+          requested_by_user_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          risk_level?: Database["public"]["Enums"]["risk_level"]
+          status?: Database["public"]["Enums"]["proposal_status"]
+          title: string
+          tool_name: string
+          updated_at?: string
+        }
+        Update: {
+          action_type?: string
+          ad_account_asset_id?: string | null
+          created_at?: string
+          created_by_agent?: string | null
+          current_state?: Json | null
+          diff?: Json | null
+          estimated_impact?: string | null
+          expires_at?: string | null
+          explanation?: string | null
+          id?: string
+          organization_id?: string
+          proposed_arguments?: Json
+          proposed_state?: Json | null
+          rationale?: string | null
+          requested_by_user_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          risk_level?: Database["public"]["Enums"]["risk_level"]
+          status?: Database["public"]["Enums"]["proposal_status"]
+          title?: string
+          tool_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "action_proposals_ad_account_asset_id_fkey"
+            columns: ["ad_account_asset_id"]
+            isOneToOne: false
+            referencedRelation: "meta_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_proposals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audit_logs: {
+        Row: {
+          action: string | null
+          agent_id: string | null
+          created_at: string
+          entity_id: string | null
+          entity_type: string | null
+          event_type: string
+          id: string
+          ip_address: string | null
+          organization_id: string
+          sanitized_metadata: Json
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action?: string | null
+          agent_id?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          event_type: string
+          id?: string
+          ip_address?: string | null
+          organization_id: string
+          sanitized_metadata?: Json
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string | null
+          agent_id?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          event_type?: string
+          id?: string
+          ip_address?: string | null
+          organization_id?: string
+          sanitized_metadata?: Json
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mcp_sessions: {
+        Row: {
+          connection_id: string
+          created_at: string
+          encrypted_session_reference: string | null
+          expires_at: string | null
+          id: string
+          initialized_at: string | null
+          last_activity_at: string | null
+          organization_id: string
+          protocol_version: string | null
+          status: Database["public"]["Enums"]["mcp_session_status"]
+        }
+        Insert: {
+          connection_id: string
+          created_at?: string
+          encrypted_session_reference?: string | null
+          expires_at?: string | null
+          id?: string
+          initialized_at?: string | null
+          last_activity_at?: string | null
+          organization_id: string
+          protocol_version?: string | null
+          status?: Database["public"]["Enums"]["mcp_session_status"]
+        }
+        Update: {
+          connection_id?: string
+          created_at?: string
+          encrypted_session_reference?: string | null
+          expires_at?: string | null
+          id?: string
+          initialized_at?: string | null
+          last_activity_at?: string | null
+          organization_id?: string
+          protocol_version?: string | null
+          status?: Database["public"]["Enums"]["mcp_session_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mcp_sessions_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "meta_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mcp_sessions_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "meta_connections_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mcp_sessions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mcp_tool_catalog: {
+        Row: {
+          description: string | null
+          enabled: boolean
+          first_seen_at: string
+          id: string
+          input_schema: Json
+          last_seen_at: string
+          provider: string
+          requires_approval: boolean
+          risk_level: Database["public"]["Enums"]["risk_level"]
+          schema_hash: string
+          server_identifier: string
+          tool_name: string
+        }
+        Insert: {
+          description?: string | null
+          enabled?: boolean
+          first_seen_at?: string
+          id?: string
+          input_schema?: Json
+          last_seen_at?: string
+          provider?: string
+          requires_approval?: boolean
+          risk_level?: Database["public"]["Enums"]["risk_level"]
+          schema_hash: string
+          server_identifier: string
+          tool_name: string
+        }
+        Update: {
+          description?: string | null
+          enabled?: boolean
+          first_seen_at?: string
+          id?: string
+          input_schema?: Json
+          last_seen_at?: string
+          provider?: string
+          requires_approval?: boolean
+          risk_level?: Database["public"]["Enums"]["risk_level"]
+          schema_hash?: string
+          server_identifier?: string
+          tool_name?: string
+        }
+        Relationships: []
+      }
+      meta_assets: {
+        Row: {
+          asset_type: Database["public"]["Enums"]["meta_asset_type"]
+          connection_id: string
+          created_at: string
+          currency: string | null
+          external_id: string
+          id: string
+          last_synced_at: string | null
+          metadata_sanitized: Json
+          name: string | null
+          organization_id: string
+          selected: boolean
+          status: string | null
+          timezone: string | null
+          updated_at: string
+        }
+        Insert: {
+          asset_type: Database["public"]["Enums"]["meta_asset_type"]
+          connection_id: string
+          created_at?: string
+          currency?: string | null
+          external_id: string
+          id?: string
+          last_synced_at?: string | null
+          metadata_sanitized?: Json
+          name?: string | null
+          organization_id: string
+          selected?: boolean
+          status?: string | null
+          timezone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          asset_type?: Database["public"]["Enums"]["meta_asset_type"]
+          connection_id?: string
+          created_at?: string
+          currency?: string | null
+          external_id?: string
+          id?: string
+          last_synced_at?: string | null
+          metadata_sanitized?: Json
+          name?: string | null
+          organization_id?: string
+          selected?: boolean
+          status?: string | null
+          timezone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_assets_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "meta_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_assets_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "meta_connections_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_assets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_connections: {
+        Row: {
+          connected_by_user_id: string
+          created_at: string
+          display_name: string | null
+          encrypted_access_token: string | null
+          encrypted_refresh_token: string | null
+          external_user_id: string | null
+          granted_scopes: string[]
+          id: string
+          last_error_code: string | null
+          last_error_message_sanitized: string | null
+          last_health_check_at: string | null
+          last_success_at: string | null
+          organization_id: string
+          provider: string
+          revoked_at: string | null
+          status: Database["public"]["Enums"]["meta_connection_status"]
+          token_expires_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          connected_by_user_id: string
+          created_at?: string
+          display_name?: string | null
+          encrypted_access_token?: string | null
+          encrypted_refresh_token?: string | null
+          external_user_id?: string | null
+          granted_scopes?: string[]
+          id?: string
+          last_error_code?: string | null
+          last_error_message_sanitized?: string | null
+          last_health_check_at?: string | null
+          last_success_at?: string | null
+          organization_id: string
+          provider?: string
+          revoked_at?: string | null
+          status?: Database["public"]["Enums"]["meta_connection_status"]
+          token_expires_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          connected_by_user_id?: string
+          created_at?: string
+          display_name?: string | null
+          encrypted_access_token?: string | null
+          encrypted_refresh_token?: string | null
+          external_user_id?: string | null
+          granted_scopes?: string[]
+          id?: string
+          last_error_code?: string | null
+          last_error_message_sanitized?: string | null
+          last_health_check_at?: string | null
+          last_success_at?: string | null
+          organization_id?: string
+          provider?: string
+          revoked_at?: string | null
+          status?: Database["public"]["Enums"]["meta_connection_status"]
+          token_expires_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_connections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_members: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          slug: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          slug?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          slug?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          default_organization_id: string | null
+          full_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          default_organization_id?: string | null
+          full_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          default_organization_id?: string | null
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_default_organization_id_fkey"
+            columns: ["default_organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
-      [_ in never]: never
+      meta_connections_public: {
+        Row: {
+          connected_by_user_id: string | null
+          created_at: string | null
+          display_name: string | null
+          external_user_id: string | null
+          granted_scopes: string[] | null
+          id: string | null
+          last_error_code: string | null
+          last_error_message_sanitized: string | null
+          last_health_check_at: string | null
+          last_success_at: string | null
+          organization_id: string | null
+          provider: string | null
+          revoked_at: string | null
+          status: Database["public"]["Enums"]["meta_connection_status"] | null
+          token_expires_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          connected_by_user_id?: string | null
+          created_at?: string | null
+          display_name?: string | null
+          external_user_id?: string | null
+          granted_scopes?: string[] | null
+          id?: string | null
+          last_error_code?: string | null
+          last_error_message_sanitized?: string | null
+          last_health_check_at?: string | null
+          last_success_at?: string | null
+          organization_id?: string | null
+          provider?: string | null
+          revoked_at?: string | null
+          status?: Database["public"]["Enums"]["meta_connection_status"] | null
+          token_expires_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          connected_by_user_id?: string | null
+          created_at?: string | null
+          display_name?: string | null
+          external_user_id?: string | null
+          granted_scopes?: string[] | null
+          id?: string | null
+          last_error_code?: string | null
+          last_error_message_sanitized?: string | null
+          last_health_check_at?: string | null
+          last_success_at?: string | null
+          organization_id?: string | null
+          provider?: string | null
+          revoked_at?: string | null
+          status?: Database["public"]["Enums"]["meta_connection_status"] | null
+          token_expires_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_connections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _org: string
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_org_member: { Args: { _org: string; _user: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role:
+        | "admin"
+        | "manager"
+        | "analyst"
+        | "creative"
+        | "approver"
+        | "viewer"
+      execution_status:
+        | "pending"
+        | "running"
+        | "succeeded"
+        | "failed"
+        | "verified"
+        | "unverified"
+        | "rolled_back"
+      mcp_session_status:
+        | "initializing"
+        | "active"
+        | "expired"
+        | "failed"
+        | "closed"
+      meta_asset_type:
+        | "business"
+        | "ad_account"
+        | "page"
+        | "instagram_account"
+        | "pixel"
+        | "catalog"
+      meta_connection_status:
+        | "pending"
+        | "active"
+        | "degraded"
+        | "reauth_required"
+        | "revoked"
+        | "error"
+      proposal_status:
+        | "draft"
+        | "awaiting_approval"
+        | "approved"
+        | "rejected"
+        | "expired"
+        | "executing"
+        | "completed"
+        | "failed"
+        | "partially_completed"
+        | "rolled_back"
+      risk_level: "read" | "draft" | "reversible" | "financial" | "destructive"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +849,60 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: [
+        "admin",
+        "manager",
+        "analyst",
+        "creative",
+        "approver",
+        "viewer",
+      ],
+      execution_status: [
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "verified",
+        "unverified",
+        "rolled_back",
+      ],
+      mcp_session_status: [
+        "initializing",
+        "active",
+        "expired",
+        "failed",
+        "closed",
+      ],
+      meta_asset_type: [
+        "business",
+        "ad_account",
+        "page",
+        "instagram_account",
+        "pixel",
+        "catalog",
+      ],
+      meta_connection_status: [
+        "pending",
+        "active",
+        "degraded",
+        "reauth_required",
+        "revoked",
+        "error",
+      ],
+      proposal_status: [
+        "draft",
+        "awaiting_approval",
+        "approved",
+        "rejected",
+        "expired",
+        "executing",
+        "completed",
+        "failed",
+        "partially_completed",
+        "rolled_back",
+      ],
+      risk_level: ["read", "draft", "reversible", "financial", "destructive"],
+    },
   },
 } as const
