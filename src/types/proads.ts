@@ -192,6 +192,9 @@ export interface AgentMessage {
   actions?: { label: string; kind: "primary" | "secondary" | "ghost" }[];
   status?: "sending" | "sent" | "error";
   imageUrl?: string;
+  images?: { url: string; format: string; label?: string }[];
+  videoUrl?: string;
+  workingSteps?: { agent: AgentRole; label: string }[];
   modelUsed?: string;
 }
 
