@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { useDemoMode } from "@/contexts/DemoModeContext";
-import proadsIcon from "@/assets/proads-icon.png.asset.json";
+
 
 
 const nav = [
@@ -52,14 +52,8 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="px-4 py-5">
         <NavLink to="/dashboard" className="flex items-center gap-2.5">
-          <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-brand">
-            <img
-              src={proadsIcon.url}
-              alt="ProAds"
-              className="h-full w-full rounded-xl object-cover"
-              width={36}
-              height={36}
-            />
+          <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-brand text-primary-foreground shadow-brand">
+            <span className="font-display text-base font-black">P</span>
             <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-sidebar" />
           </div>
           {!collapsed && (
