@@ -911,6 +911,17 @@ function MessageBubble({
           </div>
         )}
 
+        {/* Video pending job */}
+        {message.videoJob && !message.videoUrl && (
+          <VideoJobCard
+            model={message.videoJob.model}
+            status={message.videoStatus ?? "queued"}
+            progress={message.videoProgress ?? null}
+            error={message.videoError}
+            startedAt={message.videoStartedAt}
+          />
+        )}
+
         {/* Video */}
         {message.videoUrl && (
           <div className="overflow-hidden rounded-2xl border border-border bg-card">
