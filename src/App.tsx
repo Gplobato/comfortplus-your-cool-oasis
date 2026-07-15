@@ -4,7 +4,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { DemoModeProvider } from "./contexts/DemoModeContext";
-import { ThemeProvider } from "./contexts/ThemeContext";
 import AppLayout from "./layouts/AppLayout";
 import DashboardPage from "./pages/proads/DashboardPage";
 import AgentPage from "./pages/proads/AgentPage";
@@ -31,42 +30,41 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <ThemeProvider>
-      <DemoModeProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner position="top-right" richColors />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<AppLayout />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="agente" element={<AgentPage />} />
-            <Route path="campanhas" element={<CampaignsPage />} />
-            <Route path="campanhas/nova" element={<NewCampaignPage />} />
-            <Route path="campanhas/:id" element={<CampaignDetailPage />} />
-            <Route path="criativos" element={<CreativesPage />} />
-            <Route path="criativos/novo" element={<NewCreativePage />} />
-            <Route path="criativos/:id" element={<CreativeDetailPage />} />
-            <Route path="publicos" element={<AudiencesPage />} />
-            <Route path="publicos/:id" element={<AudienceDetailPage />} />
-            <Route path="aprovacoes" element={<ApprovalsPage />} />
-            <Route path="relatorios" element={<ReportsPage />} />
-            <Route path="integracoes" element={<IntegrationsPage />} />
-            <Route path="historico" element={<HistoryPage />} />
-            <Route path="configuracoes" element={<SettingsPage />} />
-            <Route path="configuracoes/empresa" element={<CompanySettingsPage />} />
-            <Route path="configuracoes/usuarios" element={<UsersSettingsPage />} />
-            <Route path="configuracoes/ia" element={<AISettingsPage />} />
-            <Route path="configuracoes/seguranca" element={<SecuritySettingsPage />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Route>
-        </Routes>
+    <DemoModeProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner position="top-right" richColors />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<AppLayout />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="agente" element={<AgentPage />} />
+              <Route path="campanhas" element={<CampaignsPage />} />
+              <Route path="campanhas/nova" element={<NewCampaignPage />} />
+              <Route path="campanhas/:id" element={<CampaignDetailPage />} />
+              <Route path="criativos" element={<CreativesPage />} />
+              <Route path="criativos/novo" element={<NewCreativePage />} />
+              <Route path="criativos/:id" element={<CreativeDetailPage />} />
+              <Route path="publicos" element={<AudiencesPage />} />
+              <Route path="publicos/:id" element={<AudienceDetailPage />} />
+              <Route path="aprovacoes" element={<ApprovalsPage />} />
+              <Route path="relatorios" element={<ReportsPage />} />
+              <Route path="integracoes" element={<IntegrationsPage />} />
+              <Route path="historico" element={<HistoryPage />} />
+              <Route path="configuracoes" element={<SettingsPage />} />
+              <Route path="configuracoes/empresa" element={<CompanySettingsPage />} />
+              <Route path="configuracoes/usuarios" element={<UsersSettingsPage />} />
+              <Route path="configuracoes/ia" element={<AISettingsPage />} />
+              <Route path="configuracoes/seguranca" element={<SecuritySettingsPage />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Route>
+          </Routes>
         </BrowserRouter>
-        </TooltipProvider>
-      </DemoModeProvider>
-    </ThemeProvider>
+      </TooltipProvider>
+    </DemoModeProvider>
   </QueryClientProvider>
+
 );
 
 export default App;
