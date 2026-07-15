@@ -1,9 +1,10 @@
-// NanoGPT multi-agent chat.
-// - Text model (default zai-org/glm-5.2) can emit <generate_image>PROMPT</generate_image>
-//   or <generate_video>PROMPT</generate_video> to hand off to the visual agents.
-// - Image mode always renders TWO variants (1:1 and 9:16) — Facebook Ads standard.
-// - Optionally embeds a brand logo reference and user-attached images into the prompt.
-// - Video mode calls the NanoGPT video endpoint (best-effort).
+// NanoGPT multi-agent chat for ProAds.
+// - Text agent (default zai-org/glm-5.2) coordinates the team and can emit:
+//     <generate_image>PROMPT</generate_image>          -> 2 image variants (1:1 + 9:16)
+//     <generate_video>PROMPT</generate_video>          -> text-to-video (happyhorse-1.1)
+//     <generate_ad_video>SCRIPT || VISUAL</generate_ad_video>
+//                                                       -> full flow: hero image + image-to-video
+// - Video via NanoGPT async job endpoint /api/generate-video + polling /api/video/status.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,21 +15,31 @@ const corsHeaders = {
 const NANO_BASE = "https://nano-gpt.com";
 const DEFAULT_TEXT_MODEL = "zai-org/glm-5.2";
 const DEFAULT_IMAGE_MODEL = "gpt-image-2";
-const DEFAULT_VIDEO_MODEL = "veo-3";
+const DEFAULT_VIDEO_MODEL = "happyhorse-1.1";
 
 const SYSTEM_PROMPT = `Você é o ProAds Assistant, um time coordenado de agentes de marketing digital dentro de uma plataforma SaaS.
-Papéis do time: Diretor de Marketing, Pesquisador, Estrategista, Copywriter, Diretor de Arte, Media Buyer, Analista.
+Cliente ativo: **Obras Timelapse (MB Group)** — monitoramento de obras via câmeras/timelapse com IA.
+
+Papéis do time: Diretor de Marketing, Pesquisador, Estrategista, Copywriter, Roteirista, Diretor de Arte, Media Buyer, Analista.
 
 Regras:
 - Responda sempre em português brasileiro, tom profissional e direto.
 - Use markdown quando ajudar (listas, negrito, tabelas curtas).
-- Se o usuário pedir para GERAR/CRIAR/DESENHAR uma imagem, um criativo visual, um anúncio em imagem ou um mockup, inclua na sua resposta a tag:
-  <generate_image>DESCRIÇÃO DETALHADA EM INGLÊS</generate_image>
-  A descrição deve ser rica (estilo, iluminação, composição, cores, produto). Serão geradas duas variantes automaticamente: 1:1 (feed) e 9:16 (stories/reels).
-- Se o usuário pedir para GERAR/CRIAR um VÍDEO, um reel ou vídeo curto para anúncio, inclua:
-  <generate_video>DESCRIÇÃO DETALHADA EM INGLÊS</generate_video>
-- Se o usuário anexou uma LOGO da marca ou imagens de referência, mencione isso no prompt visual (ex: "featuring the attached brand logo prominently").
-- NÃO use as tags se o usuário só quer conversar, analisar ou receber texto puro.`;
+- Se o usuário pedir uma IMAGEM / criativo estático / mockup, inclua na resposta:
+    <generate_image>DESCRIÇÃO DETALHADA EM INGLÊS</generate_image>
+  Duas variantes serão geradas automaticamente (1:1 Feed e 9:16 Story/Reel).
+- Se o usuário pedir um VÍDEO SIMPLES text-to-video (sem narração / sem imagem-âncora), inclua:
+    <generate_video>DESCRIÇÃO EM INGLÊS</generate_video>
+- Se o usuário pedir um CRIATIVO EM VÍDEO com foco visual/publicitário — especialmente com narração, storytelling, ou tema da marca — arquitete o criativo e inclua:
+    <generate_ad_video>
+    SCRIPT: [roteiro/narração em português, curto (~15-25s), com hook, benefício, CTA]
+    ||
+    VISUAL: [descrição em inglês, rica, do FRAME-CHAVE que vira a base do vídeo — cena, iluminação, produto, marca Obras Timelapse visível, movimento sugerido]
+    </generate_ad_video>
+  O backend gera automaticamente a imagem-âncora e, a partir dela, o vídeo via HappyHorse 1.1 (image-to-video, 9:16, 5s).
+- Antes/depois das tags, explique a estratégia (público, ângulo, CTA) em bullets curtos.
+- Se o usuário anexou logo da marca ou referências, mencione isso no bloco VISUAL (ex: "featuring the OBRAS TIMELAPSE brand logo prominently on the corner").
+- NÃO use as tags se o usuário só quer conversar ou receber texto.`;
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -51,8 +62,7 @@ async function callText(apiKey: string, messages: ChatMessage[], model: string, 
     console.error("NanoGPT text error", res.status, raw);
     throw new Error(`Text model failed (${res.status})`);
   }
-  const json = JSON.parse(raw);
-  return (json?.choices?.[0]?.message?.content ?? "") as string;
+  return (JSON.parse(raw)?.choices?.[0]?.message?.content ?? "") as string;
 }
 
 async function callImage(apiKey: string, prompt: string, model: string, size: string) {
@@ -66,8 +76,7 @@ async function callImage(apiKey: string, prompt: string, model: string, size: st
     console.error("NanoGPT image error", res.status, raw);
     throw new Error(`Image failed (${res.status})`);
   }
-  const json = JSON.parse(raw);
-  const entry = json?.data?.[0] ?? {};
+  const entry = JSON.parse(raw)?.data?.[0] ?? {};
   if (entry.url) return entry.url as string;
   if (entry.b64_json) return `data:image/png;base64,${entry.b64_json}`;
   throw new Error("Image response missing url/b64_json");
@@ -85,25 +94,98 @@ async function callImagePair(apiKey: string, prompt: string, model: string) {
   return out;
 }
 
-async function callVideo(apiKey: string, prompt: string, model: string) {
-  const res = await fetch(`${NANO_BASE}/v1/videos/generations`, {
+// -------- NanoGPT async video --------
+
+async function submitVideoJob(
+  apiKey: string,
+  body: Record<string, unknown>,
+): Promise<string> {
+  const res = await fetch(`${NANO_BASE}/api/generate-video`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, prompt, duration: 5, aspect_ratio: "9:16" }),
+    headers: {
+      "x-api-key": apiKey,
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
   });
   const raw = await res.text();
   if (!res.ok) {
-    console.error("NanoGPT video error", res.status, raw);
-    throw new Error(`Video failed (${res.status}): ${raw.slice(0, 200)}`);
+    console.error("submit video failed", res.status, raw);
+    throw new Error(`Video submit failed (${res.status}): ${raw.slice(0, 300)}`);
   }
   const json = JSON.parse(raw);
-  const url = json?.data?.[0]?.url ?? json?.url ?? json?.video_url;
-  if (!url) throw new Error("Video response missing url");
-  return url as string;
+  const runId = json?.runId ?? json?.id;
+  if (!runId) throw new Error(`Video submit sem runId: ${raw.slice(0, 200)}`);
+  return runId as string;
 }
+
+async function pollVideoJob(apiKey: string, runId: string, maxMs = 240_000): Promise<string> {
+  const deadline = Date.now() + maxMs;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    attempt++;
+    const r = await fetch(`${NANO_BASE}/api/video/status?requestId=${encodeURIComponent(runId)}`, {
+      headers: { "x-api-key": apiKey, Authorization: `Bearer ${apiKey}` },
+    });
+    const raw = await r.text();
+    if (!r.ok) {
+      console.error("poll error", r.status, raw);
+      throw new Error(`Video status ${r.status}: ${raw.slice(0, 200)}`);
+    }
+    const j = JSON.parse(raw);
+    const status: string = j?.data?.status ?? j?.status ?? "";
+    if (status === "COMPLETED") {
+      const url =
+        j?.data?.output?.video?.url ??
+        j?.data?.output?.url ??
+        j?.data?.video?.url ??
+        j?.output?.video?.url;
+      if (!url) throw new Error("COMPLETED sem url de vídeo");
+      return url as string;
+    }
+    if (status === "FAILED" || status === "CANCELED") {
+      throw new Error(j?.data?.userFriendlyError || j?.data?.error || `Vídeo ${status}`);
+    }
+    // wait: 4s first, 5s after
+    await new Promise((r) => setTimeout(r, attempt < 3 ? 4000 : 5000));
+  }
+  throw new Error("Tempo esgotado aguardando o vídeo (>4min)");
+}
+
+async function generateVideo(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  opts: { imageUrl?: string; aspect_ratio?: string; duration?: string; resolution?: string } = {},
+): Promise<string> {
+  const body: Record<string, unknown> = {
+    model,
+    prompt,
+    aspect_ratio: opts.aspect_ratio ?? "9:16",
+    duration: opts.duration ?? "5",
+    resolution: opts.resolution ?? "1080p",
+  };
+  if (opts.imageUrl) body.imageUrl = opts.imageUrl;
+  const runId = await submitVideoJob(apiKey, body);
+  console.log("video job submitted", runId, model);
+  return await pollVideoJob(apiKey, runId);
+}
+
+// -------- Tag parsing --------
 
 const IMG_RE = /<generate_image>([\s\S]*?)<\/generate_image>/i;
 const VID_RE = /<generate_video>([\s\S]*?)<\/generate_video>/i;
+const AD_VID_RE = /<generate_ad_video>([\s\S]*?)<\/generate_ad_video>/i;
+
+function parseAdVideoBlock(block: string): { script: string; visual: string } {
+  const scriptM = block.match(/SCRIPT:\s*([\s\S]*?)(?:\|\||$)/i);
+  const visualM = block.match(/VISUAL:\s*([\s\S]*)/i);
+  return {
+    script: (scriptM?.[1] ?? "").trim(),
+    visual: (visualM?.[1] ?? block).trim(),
+  };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -122,17 +204,20 @@ Deno.serve(async (req) => {
     const attachments: string[] = Array.isArray(body?.attachments) ? body.attachments : [];
 
     const contextBits: string[] = [];
-    if (useBrandLogo) contextBits.push("The user has attached the OBRAS TIMELAPSE / MB GROUP brand logo — feature it prominently and consistently in every generated visual.");
-    if (attachments.length) contextBits.push(`The user attached ${attachments.length} reference image(s). Match their style, subject and framing.`);
+    if (useBrandLogo)
+      contextBits.push(
+        "The user attached the OBRAS TIMELAPSE / MB GROUP brand logo — always feature it prominently and consistently in every generated visual (corner placement or clean overlay).",
+      );
+    if (attachments.length)
+      contextBits.push(`The user attached ${attachments.length} reference image(s). Match their style, subject and framing.`);
     const extraSystem = contextBits.join(" ");
 
-    // Direct visual mode
+    // Direct visual modes
     if (mode === "image") {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       const prompt = body?.prompt || lastUser?.content || "";
       if (!prompt) throw new Error("Missing image prompt");
-      const fullPrompt = [prompt, extraSystem].filter(Boolean).join("\n\n");
-      const images = await callImagePair(apiKey, fullPrompt, imageModel);
+      const images = await callImagePair(apiKey, [prompt, extraSystem].filter(Boolean).join("\n\n"), imageModel);
       return Response.json({ text: "", images, textModel, imageModel });
     }
 
@@ -140,7 +225,7 @@ Deno.serve(async (req) => {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       const prompt = body?.prompt || lastUser?.content || "";
       if (!prompt) throw new Error("Missing video prompt");
-      const url = await callVideo(apiKey, [prompt, extraSystem].filter(Boolean).join("\n\n"), videoModel);
+      const url = await generateVideo(apiKey, videoModel, [prompt, extraSystem].filter(Boolean).join("\n\n"));
       return Response.json({ text: "", videoUrl: url, textModel, videoModel });
     }
 
@@ -151,9 +236,46 @@ Deno.serve(async (req) => {
     let cleanedText = rawText;
     let images: { url: string; format: string; label: string }[] | undefined;
     let videoUrl: string | undefined;
+    let heroImageUrl: string | undefined;
+    let script: string | undefined;
 
+    // 1) Full ad-video flow: image + image-to-video
+    const adMatch = rawText.match(AD_VID_RE);
+    if (adMatch) {
+      cleanedText = cleanedText.replace(AD_VID_RE, "").trim();
+      const { script: s, visual } = parseAdVideoBlock(adMatch[1]);
+      script = s;
+      const visualPrompt = [visual, extraSystem].filter(Boolean).join("\n\n");
+      try {
+        heroImageUrl = await callImage(
+          apiKey,
+          `${visualPrompt}\n\nFormat: 9:16 vertical hero frame for a video ad — clean composition, strong subject, dramatic lighting`,
+          imageModel,
+          "1024x1792",
+        );
+      } catch (err) {
+        cleanedText += `\n\n_⚠️ Falha ao gerar frame-âncora: ${(err as Error).message}_`;
+      }
+      if (heroImageUrl) {
+        try {
+          const motionPrompt = script
+            ? `Ad video visualizing this narration: "${script}". Motion: subtle camera push-in, natural movement, cinematic. ${visual}`
+            : visual;
+          videoUrl = await generateVideo(apiKey, videoModel, motionPrompt, {
+            imageUrl: heroImageUrl,
+            aspect_ratio: "9:16",
+            duration: "5",
+          });
+        } catch (err) {
+          cleanedText += `\n\n_⚠️ Falha ao gerar vídeo: ${(err as Error).message}_`;
+        }
+      }
+      if (script) cleanedText = `**🎬 Roteiro / Narração:**\n\n> ${script.replace(/\n/g, "\n> ")}\n\n${cleanedText}`;
+    }
+
+    // 2) Simple image request
     const imgMatch = rawText.match(IMG_RE);
-    if (imgMatch) {
+    if (imgMatch && !images) {
       cleanedText = cleanedText.replace(IMG_RE, "").trim();
       const imgPrompt = [imgMatch[1].trim(), extraSystem].filter(Boolean).join("\n\n");
       try {
@@ -163,18 +285,31 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 3) Simple text-to-video request
     const vidMatch = rawText.match(VID_RE);
-    if (vidMatch) {
+    if (vidMatch && !videoUrl) {
       cleanedText = cleanedText.replace(VID_RE, "").trim();
       const vPrompt = [vidMatch[1].trim(), extraSystem].filter(Boolean).join("\n\n");
       try {
-        videoUrl = await callVideo(apiKey, vPrompt, videoModel);
+        videoUrl = await generateVideo(apiKey, videoModel, vPrompt);
       } catch (err) {
         cleanedText += `\n\n_⚠️ Falha ao gerar vídeo: ${(err as Error).message}_`;
       }
     }
 
-    return Response.json({ text: cleanedText, images, videoUrl, textModel, imageModel, videoModel });
+    const responseImages =
+      images ??
+      (heroImageUrl ? [{ url: heroImageUrl, format: "9:16", label: "Frame-âncora 9:16" }] : undefined);
+
+    return Response.json({
+      text: cleanedText,
+      images: responseImages,
+      videoUrl,
+      script,
+      textModel,
+      imageModel,
+      videoModel,
+    });
   } catch (err) {
     console.error("nanogpt-chat error", err);
     return new Response(JSON.stringify({ error: (err as Error).message }), {
