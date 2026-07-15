@@ -994,3 +994,71 @@ function ImageResult({
     </div>
   );
 }
+
+function VideoJobCard({
+  model,
+  status,
+  progress,
+  error,
+  startedAt,
+}: {
+  model: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  progress: number | null;
+  error?: string;
+  startedAt?: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (status === "completed" || status === "failed") return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [status]);
+  const startMs = startedAt ? new Date(startedAt).getTime() : now;
+  const secs = Math.max(0, Math.round((now - startMs) / 1000));
+  const mm = String(Math.floor(secs / 60)).padStart(2, "0");
+  const ss = String(secs % 60).padStart(2, "0");
+  const pct = progress != null ? Math.max(0, Math.min(100, Math.round(progress))) : null;
+
+  if (status === "failed") {
+    return (
+      <div className="rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <p className="font-semibold">⚠️ Vídeo falhou</p>
+        <p className="mt-1 text-xs">{error ?? "Erro desconhecido"}</p>
+      </div>
+    );
+  }
+
+  const label =
+    status === "queued"
+      ? "Job na fila do NanoGPT…"
+      : status === "processing"
+        ? "Renderizando frames…"
+        : "Finalizando…";
+
+  return (
+    <div className="rounded-2xl border border-primary/20 bg-gradient-brand-soft px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Film className="h-4 w-4 text-primary" />
+          <p className="text-sm font-semibold text-foreground">{label}</p>
+        </div>
+        <span className="font-mono text-[11px] text-muted-foreground">{mm}:{ss}</span>
+      </div>
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-primary/10">
+        <div
+          className={cn(
+            "h-full rounded-full bg-primary transition-all",
+            pct == null && "animate-pulse",
+          )}
+          style={{ width: pct != null ? `${pct}%` : "35%" }}
+        />
+      </div>
+      <p className="mt-2 text-[10px] text-muted-foreground">
+        Modelo: <span className="font-mono">{model}</span>
+        {pct != null && <> · {pct}%</>}
+        {" · "}vídeo assíncrono — você pode continuar conversando enquanto renderiza.
+      </p>
+    </div>
+  );
+}
