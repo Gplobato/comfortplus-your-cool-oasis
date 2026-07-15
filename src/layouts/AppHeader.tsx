@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Bell, Command, Plus, Search, Sparkles } from "lucide-react";
+import { Bell, Command, Moon, Plus, Search, Sparkles, Sun } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -15,11 +15,13 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { notifications } from "@/mocks/data";
 import { useDemoMode } from "@/contexts/DemoModeContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
 
 export function AppHeader() {
   const navigate = useNavigate();
   const { demoMode, setDemoMode } = useDemoMode();
+  const { theme, toggleTheme } = useTheme();
   const unread = demoMode ? notifications.filter((n) => !n.read).length : 0;
 
   return (
