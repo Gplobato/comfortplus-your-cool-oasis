@@ -56,6 +56,16 @@ export function AppHeader() {
           />
         </div>
 
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleTheme}
+          className="h-10 w-10 rounded-full"
+          aria-label={theme === "dark" ? "Ativar tema claro" : "Ativar tema escuro"}
+        >
+          {theme === "dark" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+        </Button>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
