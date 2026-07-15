@@ -71,9 +71,10 @@ const IMAGE_MODELS = [
 ];
 
 const VIDEO_MODELS = [
-  { value: "veo-3", label: "Veo 3 (padrão)" },
-  { value: "runway-gen4", label: "Runway Gen-4" },
-  { value: "kling-2", label: "Kling 2" },
+  { value: "happyhorse-1.1", label: "HappyHorse 1.1 (padrão)" },
+  { value: "veo3-video", label: "Veo 3" },
+  { value: "kling-v26-pro", label: "Kling 2.6 Pro" },
+  { value: "seedance-video", label: "Seedance" },
 ];
 
 const suggestions = [
