@@ -8,6 +8,13 @@ const corsHeaders = {
 
 const NANO_BASE = "https://nano-gpt.com";
 
+function json(data: unknown, init: ResponseInit = {}) {
+  return new Response(JSON.stringify(data), {
+    ...init,
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...(init.headers ?? {}) },
+  });
+}
+
 function extractVideoUrl(j: any): string | undefined {
   return (
     j?.data?.output?.video?.url ??
@@ -36,9 +43,8 @@ Deno.serve(async (req) => {
     const raw = await r.text();
     if (!r.ok) {
       console.error("video status error", r.status, raw);
-      return Response.json(
+      return json(
         { status: "error", error: `status ${r.status}: ${raw.slice(0, 200)}` },
-        { headers: corsHeaders },
       );
     }
 
@@ -71,12 +77,9 @@ Deno.serve(async (req) => {
       payload.error = j?.data?.userFriendlyError || j?.data?.error || j?.error || "Falha na geração";
     }
 
-    return Response.json(payload, { headers: corsHeaders });
+    return json(payload);
   } catch (err) {
     console.error("nanogpt-video-status error", err);
-    return new Response(
-      JSON.stringify({ status: "error", error: (err as Error).message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return json({ status: "error", error: (err as Error).message }, { status: 500 });
   }
 });

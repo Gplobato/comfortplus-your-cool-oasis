@@ -201,6 +201,8 @@ export interface AgentMessage {
   videoStartedAt?: string;
   phases?: { label: string; agent: AgentRole }[];
   workingSteps?: { agent: AgentRole; label: string }[];
+  generationStatus?: "queued" | "processing" | "completed" | "failed";
+  generationStartedAt?: string;
   modelUsed?: string;
 }
 
