@@ -72,6 +72,7 @@ const IMAGE_MODELS = [
 
 const VIDEO_MODELS = [
   { value: "happyhorse-1.1", label: "HappyHorse 1.1 (padrão)" },
+  { value: "google/gemini-omni-flash", label: "Gemini Omni Flash" },
   { value: "veo3-video", label: "Veo 3" },
   { value: "kling-v26-pro", label: "Kling 2.6 Pro" },
   { value: "seedance-video", label: "Seedance" },
