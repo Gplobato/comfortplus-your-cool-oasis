@@ -15,13 +15,12 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { notifications } from "@/mocks/data";
 import { useDemoMode } from "@/contexts/DemoModeContext";
-import { useTheme } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
 
 export function AppHeader() {
   const navigate = useNavigate();
   const { demoMode, setDemoMode } = useDemoMode();
-  const { theme, toggleTheme } = useTheme();
+
   const unread = demoMode ? notifications.filter((n) => !n.read).length : 0;
 
   return (
