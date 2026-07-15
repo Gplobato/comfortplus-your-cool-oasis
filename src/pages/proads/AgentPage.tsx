@@ -285,23 +285,29 @@ export default function AgentPage() {
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
-      const hasVisual = !!(data?.images?.length || data?.videoUrl);
+      const hasVisual = !!(data?.images?.length || data?.videoUrl || data?.videoJob);
       const replyMsg: AgentMessage = {
         id: `a_${Date.now()}`,
         role: "assistant",
         agent: hasVisual ? "creative_director" : "director",
         content:
           data?.text ||
-          (data?.images?.length
-            ? "Aqui estão as duas variantes prontas para Facebook Ads:"
-            : data?.videoUrl
-              ? "Aqui está o vídeo que preparei:"
-              : "(sem resposta)"),
+          (data?.videoJob
+            ? "Job de vídeo enviado. Renderizando abaixo — pode levar 1–4 min."
+            : data?.images?.length
+              ? "Aqui estão as duas variantes prontas para Facebook Ads:"
+              : data?.videoUrl
+                ? "Aqui está o vídeo que preparei:"
+                : "(sem resposta)"),
         createdAt: new Date().toISOString(),
         status: "sent",
         images: data?.images,
         videoUrl: data?.videoUrl,
-        modelUsed: data?.videoUrl ? videoModel : hasVisual ? imageModel : textModel,
+        videoJob: data?.videoJob,
+        videoStatus: data?.videoJob ? "queued" : undefined,
+        videoStartedAt: data?.videoJob ? new Date().toISOString() : undefined,
+        phases: data?.phases,
+        modelUsed: data?.videoJob || data?.videoUrl ? videoModel : hasVisual ? imageModel : textModel,
       };
 
       updateThread(active.id, (t) => ({
