@@ -10,6 +10,7 @@ import {
   Plug,
   History,
   Settings,
+  ExternalLink,
 } from "lucide-react";
 import {
   Sidebar,
