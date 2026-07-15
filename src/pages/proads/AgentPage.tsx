@@ -85,6 +85,11 @@ const suggestions = [
   "Pesquise 3 concorrentes fortes no meu nicho",
 ];
 
+type MediaRequest =
+  | { type: "image"; prompt: string }
+  | { type: "video"; prompt: string }
+  | { type: "ad_video"; prompt?: string; script: string; visual: string };
+
 // Rotating status per intent
 const STATUS_BY_INTENT: Record<"chat" | "image" | "video", { agent: AgentRole; label: string }[]> = {
   chat: [
@@ -265,6 +270,163 @@ export default function AgentPage() {
     setThreads((prev) => prev.map((t) => (t.id === id ? patch(t) : t)));
   };
 
+  const updateMessage = (threadId: string, messageId: string, patch: (m: AgentMessage) => AgentMessage) => {
+    setThreads((prev) =>
+      prev.map((t) =>
+        t.id !== threadId
+          ? t
+          : {
+              ...t,
+              updatedAt: new Date().toISOString(),
+              messages: t.messages.map((m) => (m.id === messageId ? patch(m) : m)),
+            },
+      ),
+    );
+  };
+
+  const startMediaJob = async ({
+    threadId,
+    messageId,
+    request,
+    attachmentUrls,
+    brandOn,
+  }: {
+    threadId: string;
+    messageId: string;
+    request: MediaRequest;
+    attachmentUrls: string[];
+    brandOn: boolean;
+  }) => {
+    updateMessage(threadId, messageId, (m) => ({
+      ...m,
+      generationStatus: "processing",
+      generationStartedAt: m.generationStartedAt ?? new Date().toISOString(),
+    }));
+
+    try {
+      const body: Record<string, unknown> = {
+        textModel,
+        imageModel,
+        videoModel,
+        useBrandLogo: brandOn,
+        attachments: attachmentUrls,
+      };
+
+      if (request.type === "image") {
+        body.mode = "image";
+        body.prompt = request.prompt;
+      } else if (request.type === "video") {
+        body.mode = "video";
+        body.prompt = request.prompt;
+      } else {
+        body.mode = "ad_video";
+        body.prompt = request.visual;
+        body.script = request.script;
+        body.visual = request.visual;
+      }
+
+      const { data, error } = await supabase.functions.invoke("nanogpt-chat", { body });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+
+      updateMessage(threadId, messageId, (m) => {
+        const nextText = data?.text && !m.content.includes(data.text) ? `${m.content}\n\n${data.text}`.trim() : m.content;
+        const hasVideo = !!(data?.videoJob || data?.videoUrl);
+        const hasImages = !!data?.images?.length;
+        return {
+          ...m,
+          agent: hasVideo || hasImages ? "creative_director" : m.agent,
+          content:
+            nextText ||
+            (data?.videoJob
+              ? "Job de vídeo enviado. Renderizando abaixo — pode levar 1–4 min."
+              : data?.images?.length
+                ? "Aqui estão as variantes prontas para Facebook Ads:"
+                : m.content),
+          status: "sent",
+          generationStatus: "completed",
+          images: data?.images ?? m.images,
+          videoUrl: data?.videoUrl ?? m.videoUrl,
+          videoJob: data?.videoJob ?? m.videoJob,
+          videoStatus: data?.videoJob ? "queued" : m.videoStatus,
+          videoStartedAt: data?.videoJob ? new Date().toISOString() : m.videoStartedAt,
+          phases: data?.phases ?? m.phases,
+          modelUsed: hasVideo ? videoModel : hasImages ? imageModel : m.modelUsed,
+        };
+      });
+    } catch (err: any) {
+      updateMessage(threadId, messageId, (m) => ({
+        ...m,
+        agent: "auditor",
+        status: "error",
+        generationStatus: "failed",
+        content: `${m.content}\n\n⚠️ Falha na tarefa de mídia: ${err?.message ?? "erro desconhecido"}`.trim(),
+      }));
+      toast.error("Falha na tarefa de mídia");
+    }
+  };
+
+  const startOrchestrationJob = async ({
+    threadId,
+    messageId,
+    history,
+    attachmentUrls,
+    brandOn,
+  }: {
+    threadId: string;
+    messageId: string;
+    history: { role: "user" | "assistant"; content: string }[];
+    attachmentUrls: string[];
+    brandOn: boolean;
+  }) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("nanogpt-chat", {
+        body: {
+          messages: history,
+          textModel,
+          imageModel,
+          videoModel,
+          mode: "auto",
+          useBrandLogo: brandOn,
+          attachments: attachmentUrls,
+          deferMedia: true,
+        },
+      });
+
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+
+      const mediaRequest = data?.mediaRequest as MediaRequest | undefined;
+      updateMessage(threadId, messageId, (m) => ({
+        ...m,
+        agent: mediaRequest || data?.images?.length || data?.videoJob ? "creative_director" : "director",
+        content: data?.text || m.content,
+        status: "sent",
+        generationStatus: mediaRequest ? "processing" : "completed",
+        phases: data?.phases ?? m.phases,
+        images: data?.images ?? m.images,
+        videoJob: data?.videoJob ?? m.videoJob,
+        videoUrl: data?.videoUrl ?? m.videoUrl,
+        videoStatus: data?.videoJob ? "queued" : m.videoStatus,
+        videoStartedAt: data?.videoJob ? new Date().toISOString() : m.videoStartedAt,
+        modelUsed: data?.videoJob || data?.videoUrl ? videoModel : mediaRequest || data?.images?.length ? imageModel : textModel,
+      }));
+
+      if (mediaRequest) {
+        void startMediaJob({ threadId, messageId, request: mediaRequest, attachmentUrls, brandOn });
+      }
+    } catch (err: any) {
+      updateMessage(threadId, messageId, (m) => ({
+        ...m,
+        agent: "auditor",
+        status: "error",
+        generationStatus: "failed",
+        content: `⚠️ Falha ao chamar o modelo: ${err?.message ?? "erro desconhecido"}`,
+      }));
+      toast.error("Falha na chamada do agente");
+    }
+  };
+
   const newThread = () => {
     const t = createThread();
     setThreads((prev) => [t, ...prev]);
@@ -356,6 +518,65 @@ export default function AgentPage() {
         ...attachList.map((a) => a.url),
       ];
 
+      if (forceMode !== "auto") {
+        const replyId = `a_${Date.now()}`;
+        const request: MediaRequest = { type: forceMode, prompt: text };
+        const replyMsg: AgentMessage = {
+          id: replyId,
+          role: "assistant",
+          agent: "creative_director",
+          content:
+            forceMode === "image"
+              ? "Tarefa criada. Diretor de Arte gerando as variantes 1:1 e 9:16 em segundo plano."
+              : "Tarefa criada. HappyHorse 1.1 vai receber o job e eu acompanho o status aqui.",
+          createdAt: new Date().toISOString(),
+          status: "sent",
+          generationStatus: "queued",
+          generationStartedAt: new Date().toISOString(),
+          phases: STATUS_BY_INTENT[forceMode],
+          modelUsed: forceMode === "image" ? imageModel : videoModel,
+        };
+        updateThread(active.id, (t) => ({
+          ...t,
+          messages: [...t.messages, replyMsg],
+          updatedAt: new Date().toISOString(),
+        }));
+        void startMediaJob({ threadId: active.id, messageId: replyId, request, attachmentUrls, brandOn });
+        return;
+      }
+
+      if (intent !== "chat") {
+        const replyId = `a_${Date.now()}`;
+        const replyMsg: AgentMessage = {
+          id: replyId,
+          role: "assistant",
+          agent: intent === "video" ? "strategist" : "creative_director",
+          content:
+            intent === "video"
+              ? "Tarefa criada. Analisando solicitação, estruturando roteiro e preparando o fluxo de vídeo."
+              : "Tarefa criada. Analisando solicitação e preparando o briefing visual antes da geração.",
+          createdAt: new Date().toISOString(),
+          status: "sent",
+          generationStatus: "processing",
+          generationStartedAt: new Date().toISOString(),
+          phases: STATUS_BY_INTENT[intent],
+          modelUsed: intent === "video" ? videoModel : imageModel,
+        };
+        updateThread(active.id, (t) => ({
+          ...t,
+          messages: [...t.messages, replyMsg],
+          updatedAt: new Date().toISOString(),
+        }));
+        void startOrchestrationJob({
+          threadId: active.id,
+          messageId: replyId,
+          history,
+          attachmentUrls,
+          brandOn,
+        });
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke("nanogpt-chat", {
         body: {
           messages: history,
@@ -366,13 +587,15 @@ export default function AgentPage() {
           prompt: forceMode !== "auto" ? text : undefined,
           useBrandLogo: brandOn,
           attachments: attachmentUrls,
+          deferMedia: true,
         },
       });
 
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
-      const hasVisual = !!(data?.images?.length || data?.videoUrl || data?.videoJob);
+      const mediaRequest = data?.mediaRequest as MediaRequest | undefined;
+      const hasVisual = !!(mediaRequest || data?.images?.length || data?.videoUrl || data?.videoJob);
       const replyMsg: AgentMessage = {
         id: `a_${Date.now()}`,
         role: "assistant",
@@ -388,6 +611,8 @@ export default function AgentPage() {
                 : "(sem resposta)"),
         createdAt: new Date().toISOString(),
         status: "sent",
+        generationStatus: mediaRequest ? "queued" : undefined,
+        generationStartedAt: mediaRequest ? new Date().toISOString() : undefined,
         images: data?.images,
         videoUrl: data?.videoUrl,
         videoJob: data?.videoJob,
@@ -402,6 +627,15 @@ export default function AgentPage() {
         messages: [...t.messages, replyMsg],
         updatedAt: new Date().toISOString(),
       }));
+      if (mediaRequest) {
+        void startMediaJob({
+          threadId: active.id,
+          messageId: replyMsg.id,
+          request: mediaRequest,
+          attachmentUrls,
+          brandOn,
+        });
+      }
     } catch (err: any) {
       const errorMsg: AgentMessage = {
         id: `e_${Date.now()}`,
@@ -883,6 +1117,18 @@ function MessageBubble({
           </div>
         )}
 
+        {!isUser && message.generationStatus && message.generationStatus !== "completed" && !message.videoJob && !message.images?.length && (
+          <GenerationJobCard
+            status={message.generationStatus}
+            phases={message.phases}
+            startedAt={message.generationStartedAt}
+          />
+        )}
+
+        {!isUser && message.phases && message.phases.length > 0 && message.generationStatus === "completed" && (
+          <AgentPhases phases={message.phases} />
+        )}
+
         {/* User attachments */}
         {isUser && message.attachments && message.attachments.length > 0 && (
           <div className="flex flex-wrap justify-end gap-2">
@@ -991,6 +1237,81 @@ function ImageResult({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+    </div>
+  );
+}
+
+function AgentPhases({ phases }: { phases: { label: string; agent: AgentRole }[] }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card px-4 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Etapas executadas</p>
+      <ol className="mt-2 space-y-1.5">
+        {phases.map((phase, index) => (
+          <li key={`${phase.agent}-${index}`} className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary">
+              {index + 1}
+            </span>
+            <span className="font-semibold text-foreground">{agentLabels[phase.agent]}</span>
+            <span>— {phase.label}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function GenerationJobCard({
+  status,
+  phases,
+  startedAt,
+}: {
+  status: "queued" | "processing" | "failed";
+  phases?: { label: string; agent: AgentRole }[];
+  startedAt?: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (status === "failed") return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [status]);
+
+  const startMs = startedAt ? new Date(startedAt).getTime() : now;
+  const secs = Math.max(0, Math.round((now - startMs) / 1000));
+  const mm = String(Math.floor(secs / 60)).padStart(2, "0");
+  const ss = String(secs % 60).padStart(2, "0");
+  const safePhases = phases?.length ? phases : STATUS_BY_INTENT.image;
+
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border px-4 py-3",
+        status === "failed" ? "border-destructive/40 bg-destructive/5" : "border-primary/20 bg-gradient-brand-soft",
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className={cn("h-4 w-4", status === "failed" ? "text-destructive" : "text-primary")} />
+          <p className={cn("text-sm font-semibold", status === "failed" ? "text-destructive" : "text-foreground")}>
+            {status === "queued" ? "Tarefa criada — iniciando agentes…" : status === "processing" ? "Agentes trabalhando em segundo plano…" : "Tarefa interrompida"}
+          </p>
+        </div>
+        <span className="font-mono text-[11px] text-muted-foreground">{mm}:{ss}</span>
+      </div>
+      {status !== "failed" && (
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-primary/10">
+          <div className="h-full w-2/5 animate-pulse rounded-full bg-primary" />
+        </div>
+      )}
+      <ol className="mt-3 space-y-1">
+        {safePhases.map((phase, index) => (
+          <li key={`${phase.agent}-${index}`} className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+            <span className="font-semibold text-foreground">{agentLabels[phase.agent]}</span>
+            <span>— {phase.label}</span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
