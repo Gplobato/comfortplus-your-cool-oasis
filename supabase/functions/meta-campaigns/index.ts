@@ -4,6 +4,10 @@
 import { corsHeaders, json, requireOrgMember, requireUser } from "../_shared/meta-auth.ts";
 import { loadActiveSelection, sanitizeMetaError } from "../_shared/meta-ids.ts";
 import {
+  buildCreativesPayload,
+  buildLocalOnlyCreatives,
+} from "../_shared/meta-creatives-core.ts";
+import {
   budgetFromMeta,
   extractConversionCount,
   extractCostPerLead,
@@ -231,7 +235,35 @@ Deno.serve(async (req) => {
   const gate = await requireOrgMember(ctx, orgId);
   if (gate !== true) return gate;
 
+  const resource = (url.searchParams.get("resource") || "").toLowerCase();
   const sel = await loadActiveSelection(ctx.adminClient, orgId);
+
+  // Creatives library via existing function (meta-creatives is not deployed on this project)
+  if (resource === "creatives") {
+    if ("kind" in sel) {
+      const local = await buildLocalOnlyCreatives(ctx.adminClient, orgId, sel.kind, requestId);
+      return json(local, 200);
+    }
+    try {
+      const payload = await buildCreativesPayload({
+        adminClient: ctx.adminClient,
+        orgId,
+        sel,
+        searchParams: url.searchParams,
+        requestId,
+        started,
+      });
+      return json(payload);
+    } catch (e) {
+      return json({
+        error: "creatives_fetch_failed",
+        message: sanitizeMetaError(e),
+        creatives: [],
+        request_id: requestId,
+      }, 502);
+    }
+  }
+
   if ("kind" in sel) {
     logEvent("meta.campaigns.failed", {
       request_id: requestId,

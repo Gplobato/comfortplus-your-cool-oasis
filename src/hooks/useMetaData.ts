@@ -362,6 +362,9 @@ export function useMetaCreatives(opts?: {
   if (opts?.inUse && opts.inUse !== "all") params.in_use = opts.inUse;
   if (opts?.sync) params.sync = "1";
 
+  // Served via meta-campaigns?resource=creatives (meta-creatives is not deployed yet)
+  params.resource = "creatives";
+
   return useQuery({
     queryKey: metaKeys.creatives(organizationId, selectedAdAccount?.id ?? null, {
       from: opts?.dateFrom,
@@ -369,7 +372,7 @@ export function useMetaCreatives(opts?: {
       inUse: opts?.inUse,
     }),
     queryFn: async () => {
-      const j = await fetchJson("meta-creatives", params);
+      const j = await fetchJson("meta-campaigns", params);
       return j as {
         creatives: LibraryCreative[];
         counts?: { total: number; meta: number; ai: number; upload: number; in_use: number };

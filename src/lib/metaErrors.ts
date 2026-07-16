@@ -57,6 +57,15 @@ const MAP: Array<{ match: RegExp; err: MetaFriendlyError }> = [
         "A Meta limitou temporariamente as consultas. Tente novamente em alguns minutos.",
     },
   },
+  {
+    match: /NOT_FOUND|function was not found|http_404/i,
+    err: {
+      kind: "temporary",
+      title: "Função ainda não publicada",
+      description:
+        "A API de criativos ainda não está no ar neste ambiente. Aguarde o deploy ou atualize a página em instantes.",
+    },
+  },
 ];
 
 export function metaErrorMessage(input: unknown): MetaFriendlyError {
