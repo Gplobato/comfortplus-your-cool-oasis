@@ -190,6 +190,7 @@ Deno.serve(async (req) => {
     const deferMedia: boolean = !!body?.deferMedia;
     const useBrandLogo: boolean = !!body?.useBrandLogo;
     const attachments: string[] = Array.isArray(body?.attachments) ? body.attachments : [];
+    const metaContext = body?.metaContext ?? null;
 
     const contextBits: string[] = [];
     if (useBrandLogo)
@@ -198,6 +199,16 @@ Deno.serve(async (req) => {
       );
     if (attachments.length)
       contextBits.push(`The user attached ${attachments.length} reference image(s). Match their style, subject and framing.`);
+    if (metaContext) {
+      const s = metaContext.summary
+        ? Object.entries(metaContext.summary)
+            .map(([k, v]) => `${k}=${v === null ? "n/d" : v}`)
+            .join(", ")
+        : "sem dados";
+      contextBits.push(
+        `META_CONTEXT (dados reais da Marketing API — NÃO invente números): connected=${metaContext.connected}, account=${metaContext.ad_account_name ?? "n/a"} (${metaContext.ad_account_id ?? "n/a"}), currency=${metaContext.currency ?? "n/a"}, period=${metaContext.period ? `${metaContext.period.from}..${metaContext.period.to}` : "n/a"}, summary=[${s}]. ${metaContext.guidance ?? ""} Se uma métrica for null/n/d, diga que está indisponível.`,
+      );
+    }
     const extraSystem = contextBits.join(" ");
 
     const phases: { label: string; agent: string }[] = [];
