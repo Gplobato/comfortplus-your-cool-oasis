@@ -61,9 +61,12 @@ export type MetaCampaignRow = {
   status: "ACTIVE" | "PAUSED" | "ARCHIVED" | "DRAFT" | "REVIEW";
   effective_status: string;
   dailyBudget: number; lifetimeBudget: number | null;
-  spend: number; impressions: number; clicks: number;
-  ctr: number | null; cpc: number | null;
-  leads: number; cpl: number | null; roas: number | null;
+  budgetRemaining: number | null;
+  spend: number; impressions: number; reach: number; clicks: number;
+  ctr: number | null; cpc: number | null; cpm: number | null; frequency: number | null;
+  leads: number; conversions: number; revenue: number;
+  cpl: number | null; roas: number | null;
+  startTime: string | null; stopTime: string | null;
   createdAt: string; updatedAt: string; createdByAI: boolean;
 };
 
