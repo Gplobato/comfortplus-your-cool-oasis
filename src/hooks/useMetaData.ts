@@ -82,8 +82,10 @@ export function useMetaCampaigns(opts?: { status?: string; objective?: string; d
   return useQuery({
     queryKey: metaKeys.campaigns(organizationId, selectedAdAccount?.id ?? null, {
       status: opts?.status,
+      objective: opts?.objective,
       from: opts?.dateFrom,
       to: opts?.dateTo,
+      search: opts?.search,
     }),
     queryFn: async () => {
       const j = await fetchJson("meta-campaigns", params);
