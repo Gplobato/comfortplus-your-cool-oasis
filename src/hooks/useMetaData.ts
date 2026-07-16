@@ -28,6 +28,7 @@ export type MetaDashboard = {
     roas: number | null; active_campaigns: number;
   };
   series: { date: string; spend: number; leads: number; cpl: number | null }[];
+  has_activity?: boolean;
   data_source: string;
   synced_at: string;
   warnings: string[];
