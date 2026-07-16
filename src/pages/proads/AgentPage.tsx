@@ -395,6 +395,7 @@ export default function AgentPage() {
           useBrandLogo: brandOn,
           attachments: attachmentUrls,
           deferMedia: true,
+          metaContext,
         },
       });
 
@@ -593,6 +594,7 @@ export default function AgentPage() {
           useBrandLogo: brandOn,
           attachments: attachmentUrls,
           deferMedia: true,
+          metaContext,
         },
       });
 
