@@ -314,6 +314,7 @@ export default function AgentPage() {
         videoModel,
         useBrandLogo: brandOn,
         attachments: attachmentUrls,
+        metaContext,
       };
 
       if (request.type === "image") {
