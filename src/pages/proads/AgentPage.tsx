@@ -156,6 +156,8 @@ export default function AgentPage() {
   const endRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const metaContext = useMetaAgentContext();
+
 
   const active = threads.find((t) => t.id === activeId) ?? threads[0];
 
