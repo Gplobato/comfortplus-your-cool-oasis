@@ -5,26 +5,68 @@ import { loadActiveSelection, sanitizeMetaError } from "../_shared/meta-ids.ts";
 import {
   extractConversionCount,
   extractCostPerLead,
+  extractCostPerResult,
   extractLeadCount,
+  extractLinkClicks,
   extractPurchaseValue,
+  extractResults,
   extractRoas,
   logEvent,
   newRequestId,
+  pctChange,
+  periodLabel,
   safeNum,
+  shiftYmd,
+  ymdInTz,
 } from "../_shared/meta-normalize.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_API_VERSION") ?? "v20.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
-function ymd(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
+const INSIGHTS_FIELDS =
+  "spend,impressions,reach,clicks,unique_clicks,inline_link_clicks,ctr,cpc,cpm,cpp,frequency,actions,action_values,cost_per_action_type,purchase_roas,video_play_actions,video_thruplay_watched_actions";
 
 async function gfetch(url: string) {
   const r = await fetch(url);
   const j = await r.json();
   if (!r.ok || j.error) throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
   return j;
+}
+
+function summarizeRow(row: any | null | undefined) {
+  if (!row) return emptySummary();
+  const spend = safeNum(row.spend);
+  const leads = extractLeadCount(row.actions);
+  const conversions = extractConversionCount(row.actions);
+  const linkClicks = extractLinkClicks(row.actions);
+  const revenue = extractPurchaseValue(row.action_values);
+  const { results, result_type } = extractResults(row.actions, null);
+  const roas = extractRoas(row.purchase_roas) ??
+    (spend !== null && spend > 0 && revenue > 0 ? revenue / spend : null);
+  return {
+    spend: spend ?? 0,
+    impressions: safeNum(row.impressions) ?? 0,
+    reach: safeNum(row.reach) ?? 0,
+    clicks: safeNum(row.clicks) ?? 0,
+    unique_clicks: safeNum(row.unique_clicks) ?? 0,
+    link_clicks: linkClicks || (safeNum(row.inline_link_clicks) ?? 0),
+    ctr: safeNum(row.ctr),
+    cpc: safeNum(row.cpc),
+    cpm: safeNum(row.cpm),
+    cpp: safeNum(row.cpp),
+    frequency: safeNum(row.frequency),
+    leads,
+    cpl: extractCostPerLead(row.cost_per_action_type, spend, leads),
+    conversions,
+    cost_per_conversion:
+      conversions > 0 && spend !== null ? spend / conversions : null,
+    results,
+    result_type,
+    cpr: extractCostPerResult(row.cost_per_action_type, spend, results, result_type),
+    revenue,
+    roas,
+    active_campaigns: 0,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -55,11 +97,22 @@ Deno.serve(async (req) => {
     return json({ error: sel.kind, message: (sel as any).message }, 409);
   }
 
-  const today = new Date();
-  const defaultFrom = new Date(today.getTime() - 13 * 24 * 3600 * 1000);
-  const date_from = url.searchParams.get("date_from") || ymd(defaultFrom);
-  const date_to = url.searchParams.get("date_to") || ymd(today);
+  const tz = sel.account.timezone || "America/Sao_Paulo";
+  const today = ymdInTz(new Date(), tz);
+  const defaultFrom = shiftYmd(today, -13, tz);
+  const date_from = url.searchParams.get("date_from") || defaultFrom;
+  const date_to = url.searchParams.get("date_to") || today;
   const campaignStatusParam = (url.searchParams.get("campaign_status") || "").toUpperCase();
+
+  // Previous period of equal length (for deltas)
+  const periodDays =
+    Math.round(
+      (new Date(date_to + "T12:00:00Z").getTime() -
+        new Date(date_from + "T12:00:00Z").getTime()) /
+        (24 * 3600 * 1000),
+    ) + 1;
+  const prev_to = shiftYmd(date_from, -1, tz);
+  const prev_from = shiftYmd(prev_to, -(periodDays - 1), tz);
 
   logEvent("meta.dashboard.requested", {
     request_id: requestId,
@@ -71,97 +124,116 @@ Deno.serve(async (req) => {
   });
 
   const timeRange = encodeURIComponent(JSON.stringify({ since: date_from, until: date_to }));
-  const insightsFields =
-    "spend,impressions,reach,clicks,ctr,cpc,cpm,frequency,actions,action_values,cost_per_action_type,purchase_roas";
+  const prevRange = encodeURIComponent(JSON.stringify({ since: prev_from, until: prev_to }));
   const warnings: string[] = [];
 
   const acct = sel.account.graph_id;
   const token = encodeURIComponent(sel.token);
 
-  // 1. Summary (account level)
-  let summary: any = emptySummary();
+  const statusFilter =
+    campaignStatusParam && campaignStatusParam !== "ALL"
+      ? campaignStatusParam
+      : "ACTIVE";
+
+  const [summaryRes, seriesRes, prevRes, campsRes] = await Promise.allSettled([
+    gfetch(
+      `${GRAPH}/${acct}/insights?fields=${INSIGHTS_FIELDS}&time_range=${timeRange}&access_token=${token}`,
+    ),
+    gfetch(
+      `${GRAPH}/${acct}/insights?fields=spend,impressions,reach,clicks,ctr,cpc,cpm,frequency,actions,cost_per_action_type&time_range=${timeRange}&time_increment=1&access_token=${token}`,
+    ),
+    gfetch(
+      `${GRAPH}/${acct}/insights?fields=${INSIGHTS_FIELDS}&time_range=${prevRange}&access_token=${token}`,
+    ),
+    gfetch(
+      `${GRAPH}/${acct}/campaigns?fields=id&limit=500&effective_status=${
+        encodeURIComponent(JSON.stringify([statusFilter]))
+      }&access_token=${token}`,
+    ),
+  ]);
+
+  let summary = emptySummary();
   let hasActivity = false;
-  try {
-    const r = await gfetch(
-      `${GRAPH}/${acct}/insights?fields=${insightsFields}&time_range=${timeRange}&access_token=${token}`,
-    );
-    const row = (r.data ?? [])[0];
+  if (summaryRes.status === "fulfilled") {
+    const row = (summaryRes.value.data ?? [])[0];
     if (row) {
       hasActivity = true;
+      summary = summarizeRow(row);
+    }
+  } else {
+    warnings.push(`insights: ${sanitizeMetaError(summaryRes.reason)}`);
+  }
+
+  let series: any[] = [];
+  if (seriesRes.status === "fulfilled") {
+    series = (seriesRes.value.data ?? []).map((row: any) => {
       const spend = safeNum(row.spend);
       const leads = extractLeadCount(row.actions);
-      const conversions = extractConversionCount(row.actions);
-      const revenue = extractPurchaseValue(row.action_values);
-      const roas = extractRoas(row.purchase_roas) ??
-        (spend !== null && spend > 0 && revenue > 0 ? revenue / spend : null);
-      summary = {
+      const linkClicks = extractLinkClicks(row.actions);
+      const { results, result_type } = extractResults(row.actions, null);
+      return {
+        date: row.date_start,
         spend: spend ?? 0,
         impressions: safeNum(row.impressions) ?? 0,
         reach: safeNum(row.reach) ?? 0,
         clicks: safeNum(row.clicks) ?? 0,
+        link_clicks: linkClicks,
         ctr: safeNum(row.ctr),
         cpc: safeNum(row.cpc),
         cpm: safeNum(row.cpm),
         frequency: safeNum(row.frequency),
         leads,
         cpl: extractCostPerLead(row.cost_per_action_type, spend, leads),
-        conversions,
-        cost_per_conversion:
-          conversions > 0 && spend !== null ? spend / conversions : null,
-        roas,
-        active_campaigns: 0,
-      };
-    }
-  } catch (e) {
-    warnings.push(`insights: ${sanitizeMetaError(e)}`);
-  }
-
-  // 2. Series (daily)
-  let series: any[] = [];
-  try {
-    const r = await gfetch(
-      `${GRAPH}/${acct}/insights?fields=spend,actions,cost_per_action_type&time_range=${timeRange}&time_increment=1&access_token=${token}`,
-    );
-    series = (r.data ?? []).map((row: any) => {
-      const spend = safeNum(row.spend);
-      const leads = extractLeadCount(row.actions);
-      return {
-        date: row.date_start,
-        spend: spend ?? 0,
-        leads,
-        cpl: extractCostPerLead(row.cost_per_action_type, spend, leads),
+        results,
+        cpr: extractCostPerResult(row.cost_per_action_type, spend, results, result_type),
       };
     });
-  } catch (e) {
-    warnings.push(`series: ${sanitizeMetaError(e)}`);
+  } else {
+    warnings.push(`series: ${sanitizeMetaError(seriesRes.reason)}`);
   }
 
-  // 3. Active campaigns count
-  try {
-    const filter =
-      campaignStatusParam && campaignStatusParam !== "ALL"
-        ? `&effective_status=${encodeURIComponent(JSON.stringify([campaignStatusParam]))}`
-        : `&effective_status=${encodeURIComponent(JSON.stringify(["ACTIVE"]))}`;
-    const r = await gfetch(
-      `${GRAPH}/${acct}/campaigns?fields=id&limit=500${filter}&access_token=${token}`,
-    );
-    summary.active_campaigns = (r.data ?? []).length;
-  } catch (e) {
-    warnings.push(`campaigns_count: ${sanitizeMetaError(e)}`);
+  let previous = emptySummary();
+  if (prevRes.status === "fulfilled") {
+    previous = summarizeRow((prevRes.value.data ?? [])[0]);
+  } else {
+    warnings.push(`previous: ${sanitizeMetaError(prevRes.reason)}`);
   }
 
-  await ctx.adminClient
+  if (campsRes.status === "fulfilled") {
+    summary.active_campaigns = (campsRes.value.data ?? []).length;
+  } else {
+    warnings.push(`campaigns_count: ${sanitizeMetaError(campsRes.reason)}`);
+  }
+
+  const deltas = {
+    spend: pctChange(summary.spend, previous.spend),
+    impressions: pctChange(summary.impressions, previous.impressions),
+    clicks: pctChange(summary.clicks, previous.clicks),
+    leads: pctChange(summary.leads, previous.leads),
+    cpl: summary.cpl != null && previous.cpl != null
+      ? pctChange(summary.cpl, previous.cpl)
+      : null,
+    cpm: summary.cpm != null && previous.cpm != null
+      ? pctChange(summary.cpm, previous.cpm)
+      : null,
+    cpr: summary.cpr != null && previous.cpr != null
+      ? pctChange(summary.cpr, previous.cpr)
+      : null,
+    ctr: summary.ctr != null && previous.ctr != null
+      ? pctChange(summary.ctr, previous.ctr)
+      : null,
+    roas: summary.roas != null && previous.roas != null
+      ? pctChange(summary.roas, previous.roas)
+      : null,
+    conversions: pctChange(summary.conversions, previous.conversions),
+    results: pctChange(summary.results, previous.results),
+  };
+
+  // Best-effort sync timestamp (don't block response)
+  void ctx.adminClient
     .from("meta_connections")
     .update({ last_sync_at: new Date().toISOString() })
     .eq("id", sel.connection.id);
-
-  const daysLabel = (() => {
-    const diff =
-      Math.round(
-        (new Date(date_to).getTime() - new Date(date_from).getTime()) / (24 * 3600 * 1000),
-      ) + 1;
-    return `Últimos ${diff} dias`;
-  })();
 
   logEvent("meta.dashboard.loaded", {
     request_id: requestId,
@@ -181,8 +253,16 @@ Deno.serve(async (req) => {
       currency: sel.account.currency,
       timezone: sel.account.timezone,
     },
-    period: { date_from, date_to, label: daysLabel },
+    period: {
+      date_from,
+      date_to,
+      label: periodLabel(date_from, date_to),
+      previous_from: prev_from,
+      previous_to: prev_to,
+    },
     summary,
+    previous,
+    deltas,
     series,
     has_activity: hasActivity,
     data_source: "marketing_api",
@@ -198,15 +278,22 @@ function emptySummary() {
     impressions: 0,
     reach: 0,
     clicks: 0,
-    ctr: null,
-    cpc: null,
-    cpm: null,
-    frequency: null,
+    unique_clicks: 0,
+    link_clicks: 0,
+    ctr: null as number | null,
+    cpc: null as number | null,
+    cpm: null as number | null,
+    cpp: null as number | null,
+    frequency: null as number | null,
     leads: 0,
-    cpl: null,
+    cpl: null as number | null,
     conversions: 0,
-    cost_per_conversion: null,
-    roas: null,
+    cost_per_conversion: null as number | null,
+    results: 0,
+    result_type: "unknown",
+    cpr: null as number | null,
+    revenue: 0,
+    roas: null as number | null,
     active_campaigns: 0,
   };
 }

@@ -2,11 +2,12 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Users2, DollarSign, TrendingUp, Target, MousePointerClick, Megaphone,
-  RefreshCw, Sparkles, ArrowRight, Check, X, MessageSquare, MoreHorizontal, BarChart3, RotateCw,
+  Users2, DollarSign, TrendingUp, Target, MousePointerClick,
+  RefreshCw, Sparkles, ArrowRight, Check, X, MessageSquare, BarChart3, RotateCw,
+  Eye, Percent, Activity, CircleDollarSign,
 } from "lucide-react";
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
+  ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
 } from "recharts";
 import { PageHeader } from "@/components/proads/PageHeader";
 import { MetricCard } from "@/components/proads/MetricCard";
@@ -20,13 +21,12 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { approvals, creatives, recommendations } from "@/mocks/data";
 import {
-  formatCompactCurrency, formatCurrency, formatDate, formatDateTime, formatNumber,
+  formatCurrency, formatDate, formatDateTime, formatFreq, formatMetaCurrency,
+  formatMetaNumber, formatMetaPercent, formatNumber, formatRoas,
 } from "@/lib/format";
+import { periodRange } from "@/lib/dates";
 import { useDemoMode } from "@/contexts/DemoModeContext";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { useMetaDashboard, useMetaCampaigns } from "@/hooks/useMetaData";
@@ -35,48 +35,48 @@ import { toast } from "sonner";
 import { metaInvalidationKeys } from "@/lib/metaKeys";
 import { metaErrorMessage } from "@/lib/metaErrors";
 
-const PERIOD_DAYS: Record<string, number> = { "7d": 7, "14d": 14, "30d": 30 };
-
-function ymd(d: Date) { return d.toISOString().slice(0, 10); }
-function fmtOrDash(v: number | null | undefined, fn: (n: number) => string) {
-  return v === null || v === undefined ? "—" : fn(v);
-}
+const PERIOD_DAYS: Record<string, number> = { "7d": 7, "14d": 14, "30d": 30, today: 1 };
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { demoMode } = useDemoMode();
   const meta = useMetaIntegration();
-  const [periodKey, setPeriodKey] = useState<"7d" | "14d" | "30d">("14d");
+  const [periodKey, setPeriodKey] = useState<"today" | "7d" | "14d" | "30d">("14d");
+  const [chartMode, setChartMode] = useState<"leads" | "spend">("spend");
 
-  const days = PERIOD_DAYS[periodKey];
-  const today = new Date();
-  const from = new Date(today.getTime() - (days - 1) * 864e5);
-  const dateFrom = ymd(from);
-  const dateTo = ymd(today);
+  const tz = meta.selectedAdAccount?.timezone || "America/Sao_Paulo";
+  const { dateFrom, dateTo } = useMemo(
+    () => periodRange(PERIOD_DAYS[periodKey] ?? 14, tz),
+    [periodKey, tz],
+  );
 
   const dash = useMetaDashboard({ dateFrom, dateTo });
   const camps = useMetaCampaigns({ status: "ACTIVE", dateFrom, dateTo });
 
   const useReal = meta.connected && !!meta.selectedAdAccount;
   const summary = dash.data?.summary;
+  const deltas = dash.data?.deltas;
   const series = dash.data?.series ?? [];
-  const activeCampaigns = camps.data?.campaigns ?? [];
+  const activeCampaigns = useMemo(() => {
+    const list = camps.data?.campaigns ?? [];
+    return [...list].sort((a, b) => b.spend - a.spend);
+  }, [camps.data?.campaigns]);
 
-  // Demo fallbacks
-  const demoSeries = useMemo(
-    () =>
-      Array.from({ length: days }).map((_, i) => {
-        const d = new Date(today.getTime() - (days - 1 - i) * 864e5);
-        return {
-          date: ymd(d),
-          leads: 40 + Math.round(Math.sin(i / 2) * 12) + i,
-          cpl: 14 - (i % 4),
-          spend: 500 + i * 12,
-        };
-      }),
-    [days],
-  );
+  const demoSeries = useMemo(() => {
+    const days = PERIOD_DAYS[periodKey] ?? 14;
+    return Array.from({ length: days }).map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (days - 1 - i));
+      return {
+        date: d.toISOString().slice(0, 10),
+        leads: 40 + Math.round(Math.sin(i / 2) * 12) + i,
+        cpl: 14 - (i % 4),
+        spend: 500 + i * 12,
+        cpm: 18 + (i % 5),
+      };
+    });
+  }, [periodKey]);
 
   const displayApprovals = demoMode ? approvals : [];
   const displayCreatives = demoMode ? creatives : [];
@@ -117,12 +117,14 @@ export default function DashboardPage() {
   };
 
   const dashError = dash.error ? metaErrorMessage(dash.error) : null;
+  const delta = (k: keyof NonNullable<typeof deltas>) =>
+    typeof deltas?.[k] === "number" ? (deltas![k] as number) : undefined;
 
   return (
     <>
       <PageHeader
         title="Visão Geral"
-        description="Acompanhe campanhas, criativos e recomendações da inteligência artificial."
+        description="Métricas reais da conta Meta selecionada."
         actions={
           <>
             <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-2.5">
@@ -164,6 +166,7 @@ export default function DashboardPage() {
             <Select value={periodKey} onValueChange={(v) => setPeriodKey(v as any)}>
               <SelectTrigger className="h-9 w-[150px] bg-card"><SelectValue /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="today">Hoje</SelectItem>
                 <SelectItem value="7d">Últimos 7 dias</SelectItem>
                 <SelectItem value="14d">Últimos 14 dias</SelectItem>
                 <SelectItem value="30d">Últimos 30 dias</SelectItem>
@@ -223,71 +226,148 @@ export default function DashboardPage() {
           </Card>
         )}
 
-        {/* Metrics */}
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        {/* Primary KPIs */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           {useReal && summary ? (
             <>
-              <MetricCard label="Leads" value={formatNumber(summary.leads)} icon={Users2} tone="brand" />
-              <MetricCard label="CPL" value={fmtOrDash(summary.cpl, formatCurrency)} icon={Target} tone="accent" />
-              <MetricCard label="Investimento" value={formatCurrency(summary.spend)} icon={DollarSign} tone="brand" />
-              <MetricCard label="ROAS" value={fmtOrDash(summary.roas, (n) => `${n.toFixed(2)}x`)} icon={TrendingUp} tone="success" />
-              <MetricCard label="Conversões" value={formatNumber(summary.conversions)} icon={MousePointerClick} tone="accent" />
-              <MetricCard label="Campanhas ativas" value={String(summary.active_campaigns)} icon={Megaphone} tone="warning" />
+              <MetricCard label="Investimento" value={formatCurrency(summary.spend)} delta={delta("spend")} icon={DollarSign} tone="brand" />
+              <MetricCard label="Impressões" value={formatNumber(summary.impressions)} delta={delta("impressions")} icon={Eye} tone="accent" />
+              <MetricCard label="Alcance" value={formatNumber(summary.reach)} icon={Users2} tone="accent" />
+              <MetricCard label="Cliques" value={formatNumber(summary.clicks)} delta={delta("clicks")} icon={MousePointerClick} tone="brand" />
+              <MetricCard label="CTR" value={formatMetaPercent(summary.ctr)} delta={delta("ctr")} icon={Percent} tone="success" />
+              <MetricCard label="CPC" value={formatMetaCurrency(summary.cpc)} icon={CircleDollarSign} tone="warning" />
             </>
           ) : demoMode ? (
             <>
-              <MetricCard label="Leads" value={formatNumber(1250)} delta={18.7} icon={Users2} tone="brand" />
-              <MetricCard label="CPL" value="R$ 12,45" delta={-8.3} icon={Target} tone="accent" />
-              <MetricCard label="Investimento" value={formatCompactCurrency(15562.34)} delta={14.2} icon={DollarSign} tone="brand" />
-              <MetricCard label="ROAS" value="4,32x" delta={22.1} icon={TrendingUp} tone="success" />
-              <MetricCard label="Conversões" value={formatNumber(384)} delta={12.4} icon={MousePointerClick} tone="accent" />
-              <MetricCard label="Campanhas ativas" value="12" delta={2.0} icon={Megaphone} tone="warning" />
+              <MetricCard label="Investimento" value="R$ 15.562" delta={14.2} icon={DollarSign} tone="brand" />
+              <MetricCard label="Impressões" value="482.100" delta={8.1} icon={Eye} tone="accent" />
+              <MetricCard label="Alcance" value="291.400" icon={Users2} tone="accent" />
+              <MetricCard label="Cliques" value="12.840" delta={6.4} icon={MousePointerClick} tone="brand" />
+              <MetricCard label="CTR" value="2,66%" delta={1.2} icon={Percent} tone="success" />
+              <MetricCard label="CPC" value="R$ 1,21" icon={CircleDollarSign} tone="warning" />
             </>
           ) : (
-            <>
-              <MetricCard label="Leads" value="—" icon={Users2} tone="brand" />
-              <MetricCard label="CPL" value="—" icon={Target} tone="accent" />
-              <MetricCard label="Investimento" value="—" icon={DollarSign} tone="brand" />
-              <MetricCard label="ROAS" value="—" icon={TrendingUp} tone="success" />
-              <MetricCard label="Conversões" value="—" icon={MousePointerClick} tone="accent" />
-              <MetricCard label="Campanhas ativas" value="—" icon={Megaphone} tone="warning" />
-            </>
+            Array.from({ length: 6 }).map((_, i) => (
+              <MetricCard key={i} label="—" value="—" icon={Activity} />
+            ))
           )}
         </div>
+
+        {/* Secondary KPIs */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {useReal && summary ? (
+            <>
+              <MetricCard label="CPM" value={formatMetaCurrency(summary.cpm)} delta={delta("cpm")} icon={TrendingUp} tone="brand" />
+              <MetricCard label="Frequência" value={formatFreq(summary.frequency)} icon={Activity} tone="accent" />
+              <MetricCard label="Leads" value={formatNumber(summary.leads)} delta={delta("leads")} icon={Users2} tone="brand" />
+              <MetricCard label="CPL" value={formatMetaCurrency(summary.cpl)} delta={delta("cpl")} icon={Target} tone="accent" />
+              <MetricCard
+                label="CPR"
+                value={formatMetaCurrency(summary.cpr)}
+                delta={delta("cpr")}
+                icon={Target}
+                tone="warning"
+                deltaLabel={summary.result_type && summary.result_type !== "unknown" ? `por ${summary.result_type}` : undefined}
+              />
+              <MetricCard label="ROAS" value={formatRoas(summary.roas)} delta={delta("roas")} icon={TrendingUp} tone="success" />
+            </>
+          ) : demoMode ? (
+            <>
+              <MetricCard label="CPM" value="R$ 32,30" delta={-3.1} icon={TrendingUp} tone="brand" />
+              <MetricCard label="Frequência" value="1,65" icon={Activity} tone="accent" />
+              <MetricCard label="Leads" value="1.250" delta={18.7} icon={Users2} tone="brand" />
+              <MetricCard label="CPL" value="R$ 12,45" delta={-8.3} icon={Target} tone="accent" />
+              <MetricCard label="CPR" value="R$ 12,45" delta={-8.3} icon={Target} tone="warning" />
+              <MetricCard label="ROAS" value="4,32x" delta={22.1} icon={TrendingUp} tone="success" />
+            </>
+          ) : (
+            Array.from({ length: 6 }).map((_, i) => (
+              <MetricCard key={i} label="—" value="—" icon={Activity} />
+            ))
+          )}
+        </div>
+
+        {useReal && summary && (
+          <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+            <Badge variant="outline" className="font-normal">
+              {summary.active_campaigns} campanhas ativas
+            </Badge>
+            <Badge variant="outline" className="font-normal">
+              {formatNumber(summary.results)} resultados ({summary.result_type || "—"})
+            </Badge>
+            <Badge variant="outline" className="font-normal">
+              {formatNumber(summary.link_clicks)} link clicks
+            </Badge>
+            <Badge variant="outline" className="font-normal">
+              {formatNumber(summary.conversions)} compras
+            </Badge>
+            {summary.revenue > 0 && (
+              <Badge variant="outline" className="font-normal">
+                Receita {formatCurrency(summary.revenue)}
+              </Badge>
+            )}
+            <Badge variant="outline" className="font-normal">
+              {dash.data?.period.label}
+            </Badge>
+          </div>
+        )}
 
         {/* Chart + AI */}
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="p-5 shadow-card lg:col-span-2">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="font-display font-bold">Desempenho</h3>
                 <p className="text-xs text-muted-foreground">
                   {useReal
                     ? `${dash.data?.period.label ?? ""} · ${meta.selectedAdAccount?.name ?? ""}`
-                    : "Leads e CPL"}
+                    : "Série diária"}
                 </p>
               </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-primary" /> Leads</span>
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent" /> CPL (R$)</span>
+              <div className="flex items-center gap-2">
+                <Select value={chartMode} onValueChange={(v) => setChartMode(v as any)}>
+                  <SelectTrigger className="h-8 w-[170px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="spend">Investimento + CPM</SelectItem>
+                    <SelectItem value="leads">Leads + CPL</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="h-72 w-full">
               {useReal ? (
-                dash.isLoading ? (
+                dash.isLoading && !series.length ? (
                   <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Carregando…</div>
                 ) : series.length ? (
                   <ResponsiveContainer>
-                    <LineChart data={series}>
+                    <ComposedChart data={series}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                       <XAxis dataKey="date" tickFormatter={formatDate} stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
                       <YAxis yAxisId="left" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
                       <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                      <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }} />
-                      <Legend wrapperStyle={{ display: "none" }} />
-                      <Line yAxisId="left" type="monotone" dataKey="leads" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={false} />
-                      <Line yAxisId="right" type="monotone" dataKey="cpl" stroke="hsl(var(--accent))" strokeWidth={2.5} dot={false} />
-                    </LineChart>
+                      <Tooltip
+                        contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }}
+                        formatter={(value: any, name: string) => {
+                          if (name === "spend" || name === "cpl" || name === "cpm" || name === "cpr") {
+                            return [formatCurrency(Number(value) || 0), name.toUpperCase()];
+                          }
+                          return [formatNumber(Number(value) || 0), name];
+                        }}
+                        labelFormatter={(l) => formatDate(String(l))}
+                      />
+                      <Legend />
+                      {chartMode === "spend" ? (
+                        <>
+                          <Area yAxisId="left" type="monotone" dataKey="spend" name="Investimento" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
+                          <Line yAxisId="right" type="monotone" dataKey="cpm" name="CPM" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
+                        </>
+                      ) : (
+                        <>
+                          <Area yAxisId="left" type="monotone" dataKey="leads" name="Leads" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
+                          <Line yAxisId="right" type="monotone" dataKey="cpl" name="CPL" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
+                        </>
+                      )}
+                    </ComposedChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="flex h-full items-center justify-center">
@@ -296,15 +376,15 @@ export default function DashboardPage() {
                 )
               ) : demoMode ? (
                 <ResponsiveContainer>
-                  <LineChart data={demoSeries}>
+                  <ComposedChart data={demoSeries}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                     <XAxis dataKey="date" tickFormatter={formatDate} stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
                     <YAxis yAxisId="left" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
                     <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }} />
-                    <Line yAxisId="left" type="monotone" dataKey="leads" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={false} />
-                    <Line yAxisId="right" type="monotone" dataKey="cpl" stroke="hsl(var(--accent))" strokeWidth={2.5} dot={false} />
-                  </LineChart>
+                    <Area yAxisId="left" type="monotone" dataKey="spend" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
+                    <Line yAxisId="right" type="monotone" dataKey="cpm" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
+                  </ComposedChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="flex h-full items-center justify-center">
@@ -335,12 +415,21 @@ export default function DashboardPage() {
             </div>
             <div className="flex-1 space-y-3 p-4">
               {useReal && summary ? (
-                <div className="rounded-lg bg-gradient-brand-soft p-3">
-                  <p className="text-xs font-semibold text-primary">Resumo do período</p>
-                  <p className="mt-1 text-sm">
-                    {formatNumber(summary.leads)} leads · CPL {fmtOrDash(summary.cpl, formatCurrency)} ·
-                    investimento {formatCurrency(summary.spend)}.
-                  </p>
+                <div className="space-y-3">
+                  <div className="rounded-lg bg-gradient-brand-soft p-3">
+                    <p className="text-xs font-semibold text-primary">Resumo do período</p>
+                    <p className="mt-1 text-sm leading-relaxed">
+                      {formatCurrency(summary.spend)} investidos · CPM {formatMetaCurrency(summary.cpm)} ·
+                      CTR {formatMetaPercent(summary.ctr)}.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border p-3 text-sm">
+                    <p className="text-xs font-semibold text-muted-foreground">Resultados</p>
+                    <p className="mt-1">
+                      {formatNumber(summary.leads)} leads (CPL {formatMetaCurrency(summary.cpl)}) ·
+                      CPR {formatMetaCurrency(summary.cpr)} · ROAS {formatRoas(summary.roas)}.
+                    </p>
+                  </div>
                 </div>
               ) : demoMode ? (
                 <div className="rounded-lg bg-gradient-brand-soft p-3">
@@ -364,101 +453,105 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Approvals + Recommendations */}
+        {/* Approvals + Recommendations (demo only) */}
+        {(demoMode || displayApprovals.length > 0) && (
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="shadow-card lg:col-span-2">
+              <div className="flex items-center justify-between border-b border-border p-4">
+                <div>
+                  <h3 className="font-display font-bold">Aprovações pendentes</h3>
+                  <p className="text-xs text-muted-foreground">{displayApprovals.length} itens aguardando decisão</p>
+                </div>
+                <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/aprovacoes")}>
+                  Ver todas <ArrowRight className="ml-1 h-3 w-3" />
+                </Button>
+              </div>
+              <div className="divide-y divide-border">
+                {displayApprovals.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-muted-foreground">Nenhuma aprovação pendente.</div>
+                ) : (
+                  displayApprovals.slice(0, 4).map((a) => (
+                    <div key={a.id} className="flex items-center gap-3 p-4">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-brand-soft">
+                        <Sparkles className="h-4 w-4 text-accent" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{a.title}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {a.requestedBy} · {formatDate(a.createdAt)} · <span className="font-medium text-foreground">confiança {Math.round(a.confidence * 100)}%</span>
+                        </p>
+                      </div>
+                      <Badge variant="outline" className={a.urgency === "high" ? "border-destructive/30 bg-destructive/10 text-destructive" : a.urgency === "medium" ? "border-warning/30 bg-warning-soft text-warning" : "border-border bg-muted"}>
+                        {a.urgency === "high" ? "Alta" : a.urgency === "medium" ? "Média" : "Baixa"}
+                      </Badge>
+                      <div className="hidden gap-1 md:flex">
+                        <Button size="sm" variant="ghost" className="h-8 gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => toast.error("Rejeitado")}>
+                          <X className="h-3.5 w-3.5" /> Rejeitar
+                        </Button>
+                        <Button size="sm" className="h-8 gap-1 bg-gradient-brand text-primary-foreground" onClick={() => toast.success("Aprovado")}>
+                          <Check className="h-3.5 w-3.5" /> Aprovar
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+
+            <Card className="shadow-card">
+              <div className="flex items-center justify-between border-b border-border p-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-accent" />
+                  <h3 className="font-display font-bold">Sugestões da IA</h3>
+                </div>
+              </div>
+              <div className="divide-y divide-border">
+                {displayRecommendations.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-muted-foreground">Sem sugestões no momento.</div>
+                ) : (
+                  displayRecommendations.map((r) => (
+                    <div key={r.id} className="p-4">
+                      <p className="text-sm font-semibold">{r.title}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{r.explanation}</p>
+                      <div className="mt-2 flex items-center justify-between">
+                        <Badge variant="outline" className="bg-success-soft text-success">{r.impact}</Badge>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => toast.success("Sugestão aplicada")}>Aplicar sugestão</Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Creatives (demo) + Active Campaigns */}
         <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="shadow-card lg:col-span-2">
-            <div className="flex items-center justify-between border-b border-border p-4">
-              <div>
-                <h3 className="font-display font-bold">Aprovações pendentes</h3>
-                <p className="text-xs text-muted-foreground">{displayApprovals.length} itens aguardando decisão</p>
+          {demoMode && (
+            <Card className="shadow-card lg:col-span-1">
+              <div className="flex items-center justify-between border-b border-border p-4">
+                <h3 className="font-display font-bold">Criativos recentes</h3>
+                <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/criativos")}>Ver todos</Button>
               </div>
-              <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/aprovacoes")}>
-                Ver todas <ArrowRight className="ml-1 h-3 w-3" />
-              </Button>
-            </div>
-            <div className="divide-y divide-border">
-              {displayApprovals.length === 0 ? (
-                <div className="p-8 text-center text-xs text-muted-foreground">Nenhuma aprovação pendente.</div>
+              {displayCreatives.length === 0 ? (
+                <div className="p-8 text-center text-xs text-muted-foreground">Nenhum criativo cadastrado.</div>
               ) : (
-                displayApprovals.slice(0, 4).map((a) => (
-                  <div key={a.id} className="flex items-center gap-3 p-4">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-brand-soft">
-                      <Sparkles className="h-4 w-4 text-accent" />
+                <div className="grid grid-cols-2 gap-3 p-4">
+                  {displayCreatives.slice(0, 4).map((c) => (
+                    <div key={c.id} className="group cursor-pointer" onClick={() => navigate(`/criativos/${c.id}`)}>
+                      <div className="aspect-square overflow-hidden rounded-lg bg-muted">
+                        <img src={c.thumbnailUrl} alt={c.name} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                      </div>
+                      <p className="mt-1.5 truncate text-xs font-semibold">{c.name}</p>
+                      <p className="text-[10px] text-muted-foreground">{c.format}</p>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{a.title}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {a.requestedBy} · {formatDate(a.createdAt)} · <span className="font-medium text-foreground">confiança {Math.round(a.confidence * 100)}%</span>
-                      </p>
-                    </div>
-                    <Badge variant="outline" className={a.urgency === "high" ? "border-destructive/30 bg-destructive/10 text-destructive" : a.urgency === "medium" ? "border-warning/30 bg-warning-soft text-warning" : "border-border bg-muted"}>
-                      {a.urgency === "high" ? "Alta" : a.urgency === "medium" ? "Média" : "Baixa"}
-                    </Badge>
-                    <div className="hidden gap-1 md:flex">
-                      <Button size="sm" variant="ghost" className="h-8 gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => toast.error("Rejeitado")}>
-                        <X className="h-3.5 w-3.5" /> Rejeitar
-                      </Button>
-                      <Button size="sm" className="h-8 gap-1 bg-gradient-brand text-primary-foreground" onClick={() => toast.success("Aprovado")}>
-                        <Check className="h-3.5 w-3.5" /> Aprovar
-                      </Button>
-                    </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
-            </div>
-          </Card>
+            </Card>
+          )}
 
-          <Card className="shadow-card">
-            <div className="flex items-center justify-between border-b border-border p-4">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-accent" />
-                <h3 className="font-display font-bold">Sugestões da IA</h3>
-              </div>
-            </div>
-            <div className="divide-y divide-border">
-              {displayRecommendations.length === 0 ? (
-                <div className="p-8 text-center text-xs text-muted-foreground">Sem sugestões no momento.</div>
-              ) : (
-                displayRecommendations.map((r) => (
-                  <div key={r.id} className="p-4">
-                    <p className="text-sm font-semibold">{r.title}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{r.explanation}</p>
-                    <div className="mt-2 flex items-center justify-between">
-                      <Badge variant="outline" className="bg-success-soft text-success">{r.impact}</Badge>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => toast.success("Sugestão aplicada")}>Aplicar sugestão</Button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
-        </div>
-
-        {/* Creatives + Active Campaigns */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="shadow-card lg:col-span-1">
-            <div className="flex items-center justify-between border-b border-border p-4">
-              <h3 className="font-display font-bold">Criativos recentes</h3>
-              <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/criativos")}>Ver todos</Button>
-            </div>
-            {displayCreatives.length === 0 ? (
-              <div className="p-8 text-center text-xs text-muted-foreground">Nenhum criativo cadastrado.</div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 p-4">
-                {displayCreatives.slice(0, 4).map((c) => (
-                  <div key={c.id} className="group cursor-pointer" onClick={() => navigate(`/criativos/${c.id}`)}>
-                    <div className="aspect-square overflow-hidden rounded-lg bg-muted">
-                      <img src={c.thumbnailUrl} alt={c.name} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
-                    </div>
-                    <p className="mt-1.5 truncate text-xs font-semibold">{c.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{c.format}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card className="shadow-card lg:col-span-2">
+          <Card className={`shadow-card ${demoMode ? "lg:col-span-2" : "lg:col-span-3"}`}>
             <div className="flex items-center justify-between border-b border-border p-4">
               <div>
                 <h3 className="font-display font-bold">Campanhas ativas</h3>
@@ -472,7 +565,7 @@ export default function DashboardPage() {
             </div>
             <div className="overflow-x-auto">
               {useReal ? (
-                camps.isLoading ? (
+                camps.isLoading && !activeCampaigns.length ? (
                   <div className="p-8 text-center text-xs text-muted-foreground">Carregando…</div>
                 ) : activeCampaigns.length === 0 ? (
                   <div className="p-8 text-center text-xs text-muted-foreground">Nenhuma campanha ativa nesta conta.</div>
@@ -481,24 +574,33 @@ export default function DashboardPage() {
                     <TableHeader>
                       <TableRow className="border-border hover:bg-transparent">
                         <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Campanha</TableHead>
-                        <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Leads</TableHead>
-                        <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">CPL</TableHead>
-                        <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Investimento</TableHead>
+                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">Invest.</TableHead>
+                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CPM</TableHead>
+                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CTR</TableHead>
+                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">Leads</TableHead>
+                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CPL</TableHead>
+                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CPR</TableHead>
                         <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {activeCampaigns.slice(0, 5).map((c) => (
+                      {activeCampaigns.slice(0, 8).map((c) => (
                         <TableRow key={c.id} className="cursor-pointer border-border" onClick={() => navigate(`/campanhas/${c.id}`)}>
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <PlatformBadge platform="meta" showLabel={false} />
-                              <span className="text-sm font-medium">{c.name}</span>
+                              <div className="min-w-0">
+                                <span className="block truncate text-sm font-medium">{c.name}</span>
+                                <span className="text-[10px] capitalize text-muted-foreground">{c.objective || "—"}</span>
+                              </div>
                             </div>
                           </TableCell>
-                          <TableCell className="text-sm">{formatNumber(c.leads)}</TableCell>
-                          <TableCell className="text-sm">{fmtOrDash(c.cpl, formatCurrency)}</TableCell>
-                          <TableCell className="text-sm">{formatCurrency(c.spend)}</TableCell>
+                          <TableCell className="text-right text-sm font-semibold">{formatCurrency(c.spend)}</TableCell>
+                          <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpm)}</TableCell>
+                          <TableCell className="text-right text-sm">{formatMetaPercent(c.ctr)}</TableCell>
+                          <TableCell className="text-right text-sm">{formatMetaNumber(c.leads)}</TableCell>
+                          <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpl)}</TableCell>
+                          <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpr)}</TableCell>
                           <TableCell><CampaignStatusBadge status={c.status} /></TableCell>
                         </TableRow>
                       ))}

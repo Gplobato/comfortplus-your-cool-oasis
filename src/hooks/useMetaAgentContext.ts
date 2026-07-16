@@ -56,7 +56,30 @@ export function useMetaAgentContext(period?: { dateFrom?: string; dateTo?: strin
           "Meta conectada, mas nenhuma conta de anúncio foi selecionada. Peça ao usuário para selecionar em Integrações.",
       };
     }
-    const s = dash.data?.summary ?? null;
+    const s = dash.data?.summary;
+    const numericSummary: Record<string, number | null> | null = s
+      ? {
+          spend: s.spend,
+          impressions: s.impressions,
+          reach: s.reach,
+          clicks: s.clicks,
+          unique_clicks: s.unique_clicks,
+          link_clicks: s.link_clicks,
+          ctr: s.ctr,
+          cpc: s.cpc,
+          cpm: s.cpm,
+          frequency: s.frequency,
+          leads: s.leads,
+          cpl: s.cpl,
+          conversions: s.conversions,
+          cost_per_conversion: s.cost_per_conversion,
+          results: s.results,
+          cpr: s.cpr,
+          revenue: s.revenue,
+          roas: s.roas,
+          active_campaigns: s.active_campaigns,
+        }
+      : null;
     return {
       connected: true,
       has_account: true,
@@ -67,12 +90,15 @@ export function useMetaAgentContext(period?: { dateFrom?: string; dateTo?: strin
       period: dash.data?.period
         ? { from: dash.data.period.date_from, to: dash.data.period.date_to }
         : null,
-      summary: s,
-      warnings: dash.data?.warnings ?? [],
+      summary: numericSummary,
+      warnings: [
+        ...(dash.data?.warnings ?? []),
+        ...(s?.result_type ? [`result_type=${s.result_type}`] : []),
+      ],
       data_source: (dash.data?.data_source as any) ?? "marketing_api",
       guidance: dash.data?.has_activity === false
         ? "Conta conectada, mas sem atividade no período selecionado. Não fabrique métricas."
-        : "Use somente os números presentes em summary. Se uma métrica for null, diga que está indisponível.",
+        : "Use somente os números presentes em summary (inclui CPM, CPR, CPL, CTR, ROAS). Se uma métrica for null, diga que está indisponível.",
     };
   }, [meta.connected, meta.selectedAdAccount, meta.organizationId, dash.data]);
 }

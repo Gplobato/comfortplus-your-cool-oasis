@@ -21,16 +21,60 @@ async function fetchJson(path: string, params: Record<string, string>) {
   return j;
 }
 
+export type MetaSummary = {
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  unique_clicks: number;
+  link_clicks: number;
+  ctr: number | null;
+  cpc: number | null;
+  cpm: number | null;
+  cpp: number | null;
+  frequency: number | null;
+  leads: number;
+  cpl: number | null;
+  conversions: number;
+  cost_per_conversion: number | null;
+  results: number;
+  result_type: string;
+  cpr: number | null;
+  revenue: number;
+  roas: number | null;
+  active_campaigns: number;
+};
+
+export type MetaSeriesPoint = {
+  date: string;
+  spend: number;
+  impressions?: number;
+  reach?: number;
+  clicks?: number;
+  link_clicks?: number;
+  ctr?: number | null;
+  cpc?: number | null;
+  cpm?: number | null;
+  frequency?: number | null;
+  leads: number;
+  cpl: number | null;
+  results?: number;
+  cpr?: number | null;
+};
+
 export type MetaDashboard = {
   account: { id: string; external_id: string; name: string; currency: string | null; timezone: string | null };
-  period: { date_from: string; date_to: string; label: string };
-  summary: {
-    spend: number; impressions: number; reach: number; clicks: number;
-    ctr: number | null; cpc: number | null; cpm: number | null; frequency: number | null;
-    leads: number; cpl: number | null; conversions: number; cost_per_conversion: number | null;
-    roas: number | null; active_campaigns: number;
+  period: {
+    date_from: string;
+    date_to: string;
+    label: string;
+    previous_from?: string;
+    previous_to?: string;
   };
-  series: { date: string; spend: number; leads: number; cpl: number | null }[];
+  summary: MetaSummary;
+  previous?: MetaSummary;
+  deltas?: Partial<Record<keyof MetaSummary, number | null>>;
+  series: MetaSeriesPoint[];
   has_activity?: boolean;
   data_source: string;
   synced_at: string;
@@ -52,25 +96,70 @@ export function useMetaDashboard(opts?: { dateFrom?: string; dateTo?: string; ca
     }),
     queryFn: () => fetchJson("meta-dashboard", params) as Promise<MetaDashboard>,
     enabled: !!organizationId && !!selectedAdAccount && connected,
-    staleTime: 60_000,
+    staleTime: 90_000,
+    placeholderData: (prev) => prev,
   });
 }
 
 export type MetaCampaignRow = {
-  id: string; name: string; platform: "meta"; objective: string;
+  id: string;
+  name: string;
+  platform: "meta";
+  objective: string;
   status: "ACTIVE" | "PAUSED" | "ARCHIVED" | "DRAFT" | "REVIEW";
   effective_status: string;
-  dailyBudget: number; lifetimeBudget: number | null;
+  budgetLevel?: "campaign" | "adset" | "none";
+  dailyBudget: number;
+  lifetimeBudget: number | null;
   budgetRemaining: number | null;
-  spend: number; impressions: number; reach: number; clicks: number;
-  ctr: number | null; cpc: number | null; cpm: number | null; frequency: number | null;
-  leads: number; conversions: number; revenue: number;
-  cpl: number | null; roas: number | null;
-  startTime: string | null; stopTime: string | null;
-  createdAt: string; updatedAt: string; createdByAI: boolean;
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  unique_clicks?: number;
+  link_clicks?: number;
+  ctr: number | null;
+  cpc: number | null;
+  cpm: number | null;
+  frequency: number | null;
+  leads: number;
+  conversions: number;
+  revenue: number;
+  results?: number;
+  result_type?: string;
+  cpl: number | null;
+  cpr?: number | null;
+  roas: number | null;
+  startTime: string | null;
+  stopTime: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdByAI: boolean;
 };
 
-export function useMetaCampaigns(opts?: { status?: string; objective?: string; dateFrom?: string; dateTo?: string; search?: string }) {
+export type MetaCampaignTotals = {
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  leads: number;
+  conversions: number;
+  results: number;
+  revenue: number;
+  cpl: number | null;
+  cpr: number | null;
+  cpm: number | null;
+  ctr: number | null;
+  roas: number | null;
+};
+
+export function useMetaCampaigns(opts?: {
+  status?: string;
+  objective?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  search?: string;
+}) {
   const { organizationId, selectedAdAccount, connected } = useMetaIntegration();
   const params: Record<string, string> = { organization_id: organizationId ?? "" };
   if (opts?.status && opts.status !== "all") params.status = opts.status;
@@ -89,9 +178,53 @@ export function useMetaCampaigns(opts?: { status?: string; objective?: string; d
     }),
     queryFn: async () => {
       const j = await fetchJson("meta-campaigns", params);
-      return j as { campaigns: MetaCampaignRow[]; account: any; warnings: string[]; data_source: string; synced_at: string };
+      return j as {
+        campaigns: MetaCampaignRow[];
+        totals?: MetaCampaignTotals;
+        account: any;
+        warnings: string[];
+        data_source: string;
+        synced_at: string;
+      };
     },
     enabled: !!organizationId && !!selectedAdAccount && connected,
-    staleTime: 60_000,
+    staleTime: 90_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useMetaCampaignDetail(
+  campaignId: string | undefined,
+  opts?: { dateFrom?: string; dateTo?: string },
+) {
+  const { organizationId, selectedAdAccount, connected } = useMetaIntegration();
+  const params: Record<string, string> = {
+    organization_id: organizationId ?? "",
+    campaign_id: campaignId ?? "",
+  };
+  if (opts?.dateFrom) params.date_from = opts.dateFrom;
+  if (opts?.dateTo) params.date_to = opts.dateTo;
+
+  return useQuery({
+    queryKey: [
+      ...metaKeys.campaigns(organizationId, selectedAdAccount?.id ?? null, {
+        from: opts?.dateFrom,
+        to: opts?.dateTo,
+      }),
+      "detail",
+      campaignId,
+    ],
+    queryFn: async () => {
+      const j = await fetchJson("meta-campaigns", params);
+      return j as {
+        campaign: MetaCampaignRow;
+        series: MetaSeriesPoint[];
+        account: any;
+        period: { date_from: string; date_to: string; label: string };
+        warnings: string[];
+      };
+    },
+    enabled: !!organizationId && !!selectedAdAccount && connected && !!campaignId,
+    staleTime: 90_000,
   });
 }
