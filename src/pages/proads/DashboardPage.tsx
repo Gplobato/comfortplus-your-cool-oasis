@@ -139,7 +139,10 @@ export default function DashboardPage() {
                   value={meta.selectedAdAccount?.id ?? ""}
                   onValueChange={async (v) => {
                     try { await meta.selectAdAccount(v); toast.success("Conta atualizada"); }
-                    catch (e: any) { toast.error(e?.message ?? "Falha ao selecionar"); }
+                    catch (e: any) {
+                      const m = metaErrorMessage(e);
+                      toast.error(m.title, { description: m.description });
+                    }
                   }}
                 >
                   <SelectTrigger className="h-7 w-[160px] border-0 bg-transparent text-[11px]">
@@ -207,9 +210,16 @@ export default function DashboardPage() {
           </Card>
         )}
 
+        {dashError && useReal && (
+          <Card className="border-destructive/40 bg-destructive/5 p-3 shadow-card">
+            <p className="text-sm font-semibold">{dashError.title}</p>
+            <p className="text-xs text-muted-foreground">{dashError.description}</p>
+          </Card>
+        )}
+
         {dash.data?.warnings && dash.data.warnings.length > 0 && (
           <Card className="border-warning/40 bg-warning-soft/30 p-3 text-[11px] text-warning-foreground shadow-card">
-            Aviso Meta: {dash.data.warnings.join(" · ")}
+            {metaErrorMessage(dash.data.warnings[0]).description}
           </Card>
         )}
 
