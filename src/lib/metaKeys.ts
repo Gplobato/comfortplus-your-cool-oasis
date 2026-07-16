@@ -22,7 +22,7 @@ export const metaKeys = {
   campaigns: (
     orgId: string | null,
     adAccountId: string | null,
-    filters?: { status?: string; from?: string; to?: string },
+    filters?: { status?: string; objective?: string; from?: string; to?: string; search?: string },
   ) =>
     [
       "meta",
@@ -30,8 +30,10 @@ export const metaKeys = {
       orgId,
       adAccountId,
       filters?.status ?? null,
+      filters?.objective ?? null,
       filters?.from ?? null,
       filters?.to ?? null,
+      filters?.search ?? null,
     ] as const,
   insights: (
     orgId: string | null,

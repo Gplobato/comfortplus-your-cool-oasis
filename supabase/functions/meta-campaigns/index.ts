@@ -74,6 +74,8 @@ Deno.serve(async (req) => {
   const from = url.searchParams.get("date_from") || ymd(new Date(today.getTime() - 13 * 864e5));
   const to = url.searchParams.get("date_to") || ymd(today);
   const status = (url.searchParams.get("status") || "").toUpperCase();
+  const objective = (url.searchParams.get("objective") || "").toUpperCase();
+  const search = (url.searchParams.get("search") || "").toLowerCase();
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 100) || 100, 200);
 
   const acct = sel.account.graph_id;
@@ -87,10 +89,18 @@ Deno.serve(async (req) => {
         ? `&effective_status=${encodeURIComponent(JSON.stringify([status]))}`
         : "";
     const r = await gfetch(
-      `${GRAPH}/${acct}/campaigns?fields=id,name,objective,effective_status,status,daily_budget,lifetime_budget,updated_time,created_time,start_time,stop_time` +
+      `${GRAPH}/${acct}/campaigns?fields=id,name,objective,effective_status,status,daily_budget,lifetime_budget,budget_remaining,updated_time,created_time,start_time,stop_time` +
         `&limit=${limit}${effective}&access_token=${token}`,
     );
     campaigns = r.data ?? [];
+    if (objective && objective !== "ALL") {
+      campaigns = campaigns.filter((c: any) =>
+        String(c.objective ?? "").toUpperCase().includes(objective),
+      );
+    }
+    if (search) {
+      campaigns = campaigns.filter((c: any) => String(c.name ?? "").toLowerCase().includes(search));
+    }
   } catch (e) {
     warnings.push(`campaigns: ${sanitizeMetaError(e)}`);
     logEvent("meta.campaigns.failed", {
@@ -137,6 +147,7 @@ Deno.serve(async (req) => {
       effective_status: c.effective_status,
       dailyBudget: c.daily_budget ? Number(c.daily_budget) / 100 : 0,
       lifetimeBudget: c.lifetime_budget ? Number(c.lifetime_budget) / 100 : null,
+      budgetRemaining: c.budget_remaining ? Number(c.budget_remaining) / 100 : null,
       startTime: c.start_time ?? null,
       stopTime: c.stop_time ?? null,
       spend: spend ?? 0,
@@ -149,6 +160,7 @@ Deno.serve(async (req) => {
       frequency: safeNum(ins?.frequency),
       leads,
       conversions,
+      revenue,
       cpl: extractCostPerLead(ins?.cost_per_action_type, spend, leads),
       roas,
       createdAt: c.created_time,

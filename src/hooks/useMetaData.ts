@@ -61,24 +61,31 @@ export type MetaCampaignRow = {
   status: "ACTIVE" | "PAUSED" | "ARCHIVED" | "DRAFT" | "REVIEW";
   effective_status: string;
   dailyBudget: number; lifetimeBudget: number | null;
-  spend: number; impressions: number; clicks: number;
-  ctr: number | null; cpc: number | null;
-  leads: number; cpl: number | null; roas: number | null;
+  budgetRemaining: number | null;
+  spend: number; impressions: number; reach: number; clicks: number;
+  ctr: number | null; cpc: number | null; cpm: number | null; frequency: number | null;
+  leads: number; conversions: number; revenue: number;
+  cpl: number | null; roas: number | null;
+  startTime: string | null; stopTime: string | null;
   createdAt: string; updatedAt: string; createdByAI: boolean;
 };
 
-export function useMetaCampaigns(opts?: { status?: string; dateFrom?: string; dateTo?: string }) {
+export function useMetaCampaigns(opts?: { status?: string; objective?: string; dateFrom?: string; dateTo?: string; search?: string }) {
   const { organizationId, selectedAdAccount, connected } = useMetaIntegration();
   const params: Record<string, string> = { organization_id: organizationId ?? "" };
   if (opts?.status && opts.status !== "all") params.status = opts.status;
+  if (opts?.objective && opts.objective !== "all") params.objective = opts.objective;
   if (opts?.dateFrom) params.date_from = opts.dateFrom;
   if (opts?.dateTo) params.date_to = opts.dateTo;
+  if (opts?.search) params.search = opts.search;
 
   return useQuery({
     queryKey: metaKeys.campaigns(organizationId, selectedAdAccount?.id ?? null, {
       status: opts?.status,
+      objective: opts?.objective,
       from: opts?.dateFrom,
       to: opts?.dateTo,
+      search: opts?.search,
     }),
     queryFn: async () => {
       const j = await fetchJson("meta-campaigns", params);
