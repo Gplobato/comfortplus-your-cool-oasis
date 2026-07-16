@@ -1,70 +1,110 @@
+# Auditoria da integração Meta Ads
 
-# Integração Meta Ads (MCP oficial) no ProAds
+## 1. Causa raiz
 
-Este é um escopo muito grande (dezenas de arquivos, várias tabelas, OAuth completo, cliente MCP, motor de propostas/aprovação/execução/verificação, jobs, observabilidade). Vou entregar em **fases incrementais e testáveis**, não tudo de uma vez — assim você aprova cada etapa antes de seguir.
+O OAuth, `meta_connections` e `meta_assets` funcionam. Mas **nenhuma tela além de `/integracoes` consulta esses dados**. Não existe:
 
-## 1. Auditoria do projeto atual
+- fonte de verdade compartilhada da integração Meta;
+- endpoint de dashboard/campanhas que consulte a Marketing API;
+- normalização de IDs (`act_` vs external_id);
+- persistência utilizada pelas demais páginas.
 
-- **Frontend:** React 18 + Vite + TS + Tailwind + shadcn, rotas em `src/App.tsx` (React Router).
-- **Backend:** Lovable Cloud (Supabase). Já existem Edge Functions `nanogpt-chat` e `nanogpt-video-status`.
-- **Auth:** ainda **não há autenticação de usuário** implementada — o app opera em "Demo Mode" (`DemoModeContext`). Não há `auth.users` sendo usado, nem tabelas, nem RLS.
-- **Secrets:** `NANOGPT_API_KEY`, `LOVABLE_API_KEY`, `SUPABASE_*` — gerenciados via `add_secret`.
-- **Serviços frontend:** `src/services/index.ts` retorna dados de `src/mocks/data.ts` com `delay()` — tudo mock.
-- **Páginas relevantes:** `IntegrationsPage` (cards mock genéricos), `AgentPage`, `ApprovalsPage`, `HistoryPage`, `CampaignsPage`, `DashboardPage` — todas consumindo mocks.
-- **Banco:** vazio (sem tabelas, sem triggers).
-- **Multitenancy:** inexistente hoje.
+Cada página tem seu próprio estado local baseado em `demoMode` + mocks de `src/mocks/data.ts`.
 
-## 2. Bloqueios que precisam ser resolvidos ANTES
+## 2. Arquivos envolvidos (estado atual)
 
-Para atender aos critérios de aceite (multitenancy, RLS, "usuário X não vê org Y", auditoria por usuário, aprovações registradas com `reviewed_by_user_id`), o app **precisa de autenticação de usuário e modelo de organizações**. Hoje isso não existe.
+| Área | Arquivo | Fonte de dados hoje |
+|---|---|---|
+| Conexão OAuth | `supabase/functions/meta-oauth-start`, `meta-oauth-callback` | OK — grava `meta_connections` + `meta_assets` |
+| Gerência da conexão | `supabase/functions/meta-connection` | OK — status/select_account/test/disconnect |
+| Página Integrações | `src/pages/proads/IntegrationsPage.tsx` (`MetaCard`) | Chama `meta-connection?action=status` — **única página real** |
+| Visão Geral | `src/pages/proads/DashboardPage.tsx` | Mock `analyticsService` + string hard-coded "Não conectada" |
+| Campanhas | `src/pages/proads/CampaignsPage.tsx` | Mock `campaignService.list()` |
+| Agente IA | `AgentPage.tsx` + `nanogpt-chat` | Não recebe contexto Meta |
+| Estado global | Não existe hook/contexto de integração Meta | — |
 
-Além disso, para o servidor MCP oficial da Meta:
+## 3. Divergências encontradas
 
-- Não existe hoje um "servidor MCP remoto oficial mantido pela Meta" com URL pública documentada por eles. O que existe publicamente são MCP servers **de terceiros** para Marketing API (ex.: `pipeboard-co/meta-ads-mcp`) que rodam local/self-hosted. **Preciso da URL do servidor MCP que você quer usar** (ou concordar em auto-hospedar um). Sem essa URL a integração não pode ser "oficial" — seria inventar endpoint, coisa que o próprio prompt proíbe.
-- OAuth com Meta exige **App ID/Secret do Facebook Developers** criados por você, com `redirect_uri` server-side apontando para a Edge Function de callback.
+1. **Seletor da Dashboard** é decorativo — usa `demoMode`, não consulta `meta_connections`.
+2. **`Atualizar`** apenas re-executa mock; **`Sincronizar CRM`** é `setTimeout` puro.
+3. **IDs**: `meta_assets.external_id` já vem como `act_123` do OAuth callback, mas nenhum consumidor normaliza; helpers inexistentes.
+4. **Cache/React Query**: `queryClient` existe mas não é usado nas páginas problemáticas.
+5. **Conexão "ativa"** só considera `status='active'` — não valida existência de asset `selected`.
+6. **Nenhum endpoint de dashboard/insights/campaigns** consulta Graph API.
 
-## 3. Plano faseado proposto
+## 4. Endpoints faltantes
 
-### Fase 0 — Fundação (pré-requisitos)
-1. Confirmar/entregar: URL do MCP Meta Ads, Meta App ID, Meta App Secret.
-2. Habilitar autenticação (email/senha + Google) e criar tabelas `organizations`, `organization_members`, `user_roles` com RLS + `has_role()`.
-3. Migrar a UI existente para exigir login e escopo por organização (sem quebrar Demo Mode como fallback visual).
+- `GET meta-integration/status` (unificado com o formato pedido no item 5 do briefing)
+- `GET meta-dashboard` (insights de conta + série temporal)
+- `GET meta-campaigns` (lista de campaigns/adsets/ads)
+- `POST meta-sync` (materializa último snapshot; hoje inexistente)
 
-### Fase 1 — Modelo de dados + Secrets
-Migração criando: `meta_connections`, `meta_assets`, `mcp_tool_catalog`, `mcp_sessions`, `action_proposals`, `action_executions`, `audit_logs` — todas com RLS por `organization_id`, GRANTs corretos, tokens em colunas **nunca lidas pelo frontend** (acessadas só via Edge Function com service role). Adicionar secrets: `META_APP_ID`, `META_APP_SECRET`, `META_MCP_URL`, `META_TOKEN_ENCRYPTION_KEY`, `META_OAUTH_STATE_SECRET`.
+## 5. Plano de correção (steps 1–7 do briefing)
 
-### Fase 2 — OAuth Meta (server-side)
-Edge Functions: `meta-oauth-start`, `meta-oauth-callback`, `meta-disconnect`, `meta-test-connection`. PKCE, state HMAC, criptografia AES-GCM de tokens, allowlist de redirect. UI: botão "Conectar Meta" em `IntegrationsPage` (substitui o card mock). Sem token no frontend.
+### 5.1 Backend — nova edge function `meta-integration`
+Consolida status enriquecido. Retorna o payload do briefing (§5) incluindo `selected_ad_account`, `token_status`, `data_source`, `requires_account_selection`.
 
-### Fase 3 — Cliente MCP (Streamable HTTP)
-Edge Function `meta-mcp-gateway` com módulo `MetaMcpClient`: initialize → notifications/initialized → tools/list → cache do catálogo em `mcp_tool_catalog` com `schema_hash` e `risk_level` classificado server-side por allowlist (não pelo modelo). Tela "Capacidades MCP" em Integrações.
+### 5.2 Backend — helpers compartilhados
+`supabase/functions/_shared/meta-ids.ts` com:
+- `normalizeMetaAdAccountId(x)` → sem prefixo
+- `toGraphAdAccountId(x)` → com `act_`
+- `getActiveSelection(admin, orgId)` → `{ connection, token, account }` ou erro tipado
 
-### Fase 4 — Leitura (Risco 0)
-Endpoints tipados: `/meta/ad-accounts`, `/meta/campaigns`, `/meta/campaigns/:id/insights`. Adaptadores `mcp*ToProAds*`. Dashboard e página Campanhas passam a ler dados reais quando houver conexão, mantendo estados: carregando / vazio / erro / permissão insuficiente / reconexão. Demo Mode continua isolado.
+### 5.3 Backend — `meta-dashboard`
+`GET ?organization_id&date_from&date_to&campaign_status` → chama Graph `act_<id>/insights` (fields: spend, impressions, reach, clicks, ctr, cpc, cpm, frequency, actions) e `act_<id>/campaigns?fields=effective_status` para contagem ativa. Series por dia com `time_increment=1`. Métricas ausentes → `null` (não zero forçado). Valida ownership do account.
 
-### Fase 5 — Propostas + Aprovação humana
-Endpoints `action-proposals` (create/list/approve/reject/execute). Chat do agente cria proposta em vez de executar. Página Aprovações mostra diff (estado atual re-consultado no MCP), impacto, risco, agente, botões aprovar/rejeitar/editar.
+### 5.4 Backend — `meta-campaigns`
+`GET ?organization_id&status&limit` → Graph `act_<id>/campaigns` + insights por campaign (spend, impressions, clicks, leads via actions). Normaliza para o shape usado pela UI (`Campaign`-like).
 
-### Fase 6 — Execução + Verificação + Auditoria
-`meta-execute-action` com idempotency_key, re-fetch antes de aplicar, re-fetch depois para confirmar, invalida aprovação se estado mudou, registra `action_executions` + `audit_logs`. Guardrails server-side (limites de orçamento, ações destrutivas bloqueadas).
+### 5.5 Backend — `meta-sync`
+`POST { organization_id }` → refaz discovery de assets + roda um `meta-dashboard` warm e grava `last_sync_at` na conexão + audit_log. Reutiliza pela Visão Geral (botão Sincronizar).
 
-### Fase 7 — Jobs, observabilidade, hardening
-Cron (`pg_cron` + `pg_net`): health-check 15min, refresh catálogo diário, verificação de execuções pendentes. Logs estruturados com `request_id`/`trace_id`. Tela Diagnóstico. Defesas anti-prompt-injection e SSRF (allowlist de hosts MCP).
+### 5.6 Migration
+Adicionar `last_sync_at timestamptz` em `meta_connections` (se não existir). GRANTs já OK.
 
-## 4. Riscos e limitações honestas
+### 5.7 Frontend — fonte única de verdade
+Novo `src/contexts/MetaIntegrationContext.tsx` + hook `useMetaIntegration()` expondo exatamente o shape pedido no briefing. Wrappa em `App.tsx` dentro de `OrganizationProvider`. Consome `meta-integration` via React Query (`['meta','status', orgId]`). Ações:
+- `selectAdAccount(id)` → chama `meta-connection?action=select_account` e invalida `['meta',*]`.
+- `sync()` → chama `meta-sync` e invalida caches de dashboard/campanhas.
+- `refreshStatus()` → invalida `['meta','status']`.
 
-- Sem URL oficial confirmada do MCP Meta, Fases 3+ ficam bloqueadas.
-- Sem autenticação real hoje, os critérios de multitenancy e "não vazar dados entre orgs" **não podem** ser atendidos até a Fase 0 concluir.
-- O escopo total ~ 40+ arquivos novos, 7+ tabelas, 8+ Edge Functions. Vai levar várias interações — não é uma entrega monolítica.
-- Nada de dados reais alterados durante desenvolvimento; toda escrita começa desabilitada por política (`META_DEFAULT_WRITE_MODE=approval_required`, `META_ALLOW_AUTOMATIC_PUBLISH=false`).
+### 5.8 Frontend — hooks de dados
+- `useMetaDashboard({ period })` → React Query em `meta-dashboard`, disabled se sem `selectedAdAccount`.
+- `useMetaCampaigns({ status })` → idem em `meta-campaigns`.
 
-## 5. Preciso de você para começar
+### 5.9 Frontend — DashboardPage
+Substituir:
+- "Conta Meta / Não conectada" → estado real do contexto (Conectada/`display_name` / "Selecione uma conta" / "Não conectada").
+- Seletor de conta funcional (mesmas opções da Integrações, `selectAdAccount` persiste).
+- KPIs e gráfico consumindo `useMetaDashboard` (null → "—").
+- "Atualizar" → `queryClient.invalidateQueries(['meta','dashboard'])`.
+- "Sincronizar CRM" → renomeado "Sincronizar Meta", chama `sync()`.
+- Modo demo preservado como fallback quando `!connected`.
 
-Antes de a Fase 0 rodar, responda:
+### 5.10 Frontend — CampaignsPage
+Consumir `useMetaCampaigns` quando conectado; cair para mock quando `demoMode` e sem conexão. Sem quebrar detalhe/criação (mantém mocks localmente até steps futuros).
 
-1. **URL do MCP Meta Ads** que devo usar (oficial da Meta, self-hosted, ou de terceiros como pipeboard). Sem isso não implemento chamadas MCP.
-2. Você tem um **App na Meta for Developers** com App ID/Secret? (Se não, te oriento a criar antes da Fase 2.)
-3. **Autenticação de usuários**: posso ativar email/senha + Google agora (Fase 0)? Isso é bloqueante para multitenancy.
-4. Confirmo começar pela **Fase 0 + Fase 1** (auth + schema) nesta próxima rodada, sem tocar em Meta ainda?
+### 5.11 AgentPage (mínimo agora)
+Injetar `selectedAdAccount + kpis` no system prompt de `nanogpt-chat` (via body). Uso pleno das ferramentas fica para os steps 8+.
 
-Quando você responder esses quatro pontos, sigo com Fase 0/1 já implementando.
+## 6. Segurança
+- Todas as functions revalidam JWT + `is_org_member`.
+- Nunca retornar tokens. Erros de Graph sanitizados a 200 chars.
+- Warnings (ex.: `ads_read` ausente) enviados no array `warnings`.
+
+## 7. O que NÃO faço agora
+- Persistir insights em tabela dedicada (só cache in-memory via React Query). Se quiser materialização, entra num step futuro.
+- Reescrever detalhe de campanha/criativos (mocks continuam até você mandar).
+- Implementar CRM (renomeio botão).
+
+## Resumo executável
+
+Nesta rodada eu vou:
+1. Criar migration `last_sync_at`.
+2. Criar 3 novas edge functions: `meta-integration`, `meta-dashboard`, `meta-campaigns`, `meta-sync` + shared `meta-ids.ts`.
+3. Criar `MetaIntegrationContext` + hooks React Query.
+4. Reescrever `DashboardPage` e `CampaignsPage` para consumirem dados reais (com fallback a `demoMode`).
+5. Ajustar `IntegrationsPage` (`MetaCard`) para usar o mesmo contexto (evita duplicação de fetch).
+6. Passar contexto Meta básico ao Agent.
+
+Confirma para eu executar tudo isso na próxima resposta?

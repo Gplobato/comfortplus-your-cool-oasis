@@ -6,6 +6,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { DemoModeProvider } from "./contexts/DemoModeContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import { OrganizationProvider } from "./contexts/OrganizationContext";
+import { MetaIntegrationProvider } from "./contexts/MetaIntegrationContext";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import LoginPage from "./pages/auth/LoginPage";
 import OnboardingPage from "./pages/auth/OnboardingPage";
@@ -38,6 +39,7 @@ const App = () => (
     <BrowserRouter>
       <AuthProvider>
         <OrganizationProvider>
+          <MetaIntegrationProvider>
           <DemoModeProvider>
             <TooltipProvider>
               <Toaster />
@@ -78,6 +80,7 @@ const App = () => (
               </Routes>
             </TooltipProvider>
           </DemoModeProvider>
+          </MetaIntegrationProvider>
         </OrganizationProvider>
       </AuthProvider>
     </BrowserRouter>
