@@ -17,12 +17,16 @@ const OrgContext = createContext<OrgContextValue | undefined>(undefined);
 const STORAGE_KEY = "proads:active-org";
 
 export function OrganizationProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [activeOrg, setActiveOrgState] = useState<Organization | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    if (authLoading) {
+      setLoading(true);
+      return;
+    }
     if (!user) {
       setOrganizations([]);
       setActiveOrgState(null);
@@ -30,10 +34,17 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
       return;
     }
     setLoading(true);
-    const { data: memberships } = await supabase
+    const { data: memberships, error } = await supabase
       .from("organization_members")
       .select("organization_id, organizations(id, name, slug)")
       .eq("user_id", user.id);
+
+    if (error) {
+      // Don't wipe state / redirect to onboarding on transient errors
+      console.error("Failed to load organizations", error);
+      setLoading(false);
+      return;
+    }
 
     const orgs: Organization[] = (memberships ?? [])
       .map((m: any) => m.organizations)
@@ -45,7 +56,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     setActiveOrgState(preferred);
     if (preferred) localStorage.setItem(STORAGE_KEY, preferred.id);
     setLoading(false);
-  }, [user]);
+  }, [user?.id, authLoading]);
 
   useEffect(() => {
     refresh();
