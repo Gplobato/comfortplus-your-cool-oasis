@@ -13,8 +13,11 @@ async function fetchJson(path: string, params: Record<string, string>) {
       apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
     },
   });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const code = j?.error ?? `http_${r.status}`;
+    throw new Error(String(code));
+  }
   return j;
 }
 

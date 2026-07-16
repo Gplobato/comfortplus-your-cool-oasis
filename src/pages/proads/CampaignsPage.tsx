@@ -21,6 +21,7 @@ import { useDemoMode } from "@/contexts/DemoModeContext";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { useMetaCampaigns } from "@/hooks/useMetaData";
 import { metaKeys } from "@/lib/metaKeys";
+import { metaErrorMessage } from "@/lib/metaErrors";
 
 type Row = {
   id: string; name: string; platform: string; objective: string; status: any;
@@ -106,6 +107,16 @@ export default function CampaignsPage() {
             <Button size="sm" className="mt-2" onClick={() => navigate("/integracoes")}>Ir para Integrações</Button>
           </Card>
         )}
+
+        {useReal && camps.error && (() => {
+          const m = metaErrorMessage(camps.error);
+          return (
+            <Card className="border-destructive/40 bg-destructive/5 p-3 shadow-card">
+              <p className="text-sm font-semibold">{m.title}</p>
+              <p className="text-xs text-muted-foreground">{m.description}</p>
+            </Card>
+          );
+        })()}
 
         <Card className="flex flex-wrap items-center gap-3 p-3 shadow-card">
           <div className="relative min-w-[220px] flex-1">
