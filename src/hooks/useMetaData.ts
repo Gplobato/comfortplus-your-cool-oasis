@@ -70,12 +70,14 @@ export type MetaCampaignRow = {
   createdAt: string; updatedAt: string; createdByAI: boolean;
 };
 
-export function useMetaCampaigns(opts?: { status?: string; dateFrom?: string; dateTo?: string }) {
+export function useMetaCampaigns(opts?: { status?: string; objective?: string; dateFrom?: string; dateTo?: string; search?: string }) {
   const { organizationId, selectedAdAccount, connected } = useMetaIntegration();
   const params: Record<string, string> = { organization_id: organizationId ?? "" };
   if (opts?.status && opts.status !== "all") params.status = opts.status;
+  if (opts?.objective && opts.objective !== "all") params.objective = opts.objective;
   if (opts?.dateFrom) params.date_from = opts.dateFrom;
   if (opts?.dateTo) params.date_to = opts.dateTo;
+  if (opts?.search) params.search = opts.search;
 
   return useQuery({
     queryKey: metaKeys.campaigns(organizationId, selectedAdAccount?.id ?? null, {
