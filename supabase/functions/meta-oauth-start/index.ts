@@ -37,13 +37,20 @@ Deno.serve(async (req) => {
     ts: Math.floor(Date.now() / 1000),
   });
 
+  const configId = Deno.env.get("META_LOGIN_CONFIG_ID");
   const authUrl = new URL(`https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth`);
   authUrl.searchParams.set("client_id", appId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("state", state);
-  authUrl.searchParams.set("scope", SCOPES);
   authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("auth_type", "rerequest");
+  if (configId) {
+    // Facebook Login for Business: config_id defines the permissions/assets set.
+    authUrl.searchParams.set("config_id", configId);
+  } else {
+    // Classic Facebook Login fallback.
+    authUrl.searchParams.set("scope", SCOPES);
+    authUrl.searchParams.set("auth_type", "rerequest");
+  }
 
   return json({ authUrl: authUrl.toString(), redirect_uri: redirectUri });
 });
