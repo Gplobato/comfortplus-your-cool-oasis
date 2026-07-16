@@ -2,23 +2,22 @@
 // GET ?organization_id=...&status=ACTIVE&date_from=...&date_to=...&limit=100
 import { corsHeaders, json, requireOrgMember, requireUser } from "../_shared/meta-auth.ts";
 import { loadActiveSelection, sanitizeMetaError } from "../_shared/meta-ids.ts";
+import {
+  extractConversionCount,
+  extractCostPerLead,
+  extractLeadCount,
+  extractPurchaseValue,
+  extractRoas,
+  logEvent,
+  newRequestId,
+  safeNum,
+} from "../_shared/meta-normalize.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_API_VERSION") ?? "v20.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 function ymd(d: Date) {
   return d.toISOString().slice(0, 10);
-}
-function num(x: any): number | null {
-  if (x === null || x === undefined || x === "") return null;
-  const n = Number(x);
-  return Number.isFinite(n) ? n : null;
-}
-function sumActions(actions: any[] | undefined, types: string[]) {
-  if (!Array.isArray(actions)) return 0;
-  let s = 0;
-  for (const a of actions) if (types.includes(String(a.action_type))) s += Number(a.value) || 0;
-  return s;
 }
 async function gfetch(url: string) {
   const r = await fetch(url);
@@ -49,6 +48,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "GET") return json({ error: "method_not_allowed" }, 405);
 
+  const requestId = newRequestId();
+  const started = Date.now();
+
   const ctx = await requireUser(req);
   if (ctx instanceof Response) return ctx;
 
@@ -59,7 +61,14 @@ Deno.serve(async (req) => {
   if (gate !== true) return gate;
 
   const sel = await loadActiveSelection(ctx.adminClient, orgId);
-  if ("kind" in sel) return json({ error: sel.kind, message: (sel as any).message }, 409);
+  if ("kind" in sel) {
+    logEvent("meta.campaigns.failed", {
+      request_id: requestId,
+      organization_id: orgId,
+      error_code: sel.kind,
+    });
+    return json({ error: sel.kind, message: (sel as any).message }, 409);
+  }
 
   const today = new Date();
   const from = url.searchParams.get("date_from") || ymd(new Date(today.getTime() - 13 * 864e5));
@@ -78,12 +87,19 @@ Deno.serve(async (req) => {
         ? `&effective_status=${encodeURIComponent(JSON.stringify([status]))}`
         : "";
     const r = await gfetch(
-      `${GRAPH}/${acct}/campaigns?fields=id,name,objective,effective_status,status,daily_budget,lifetime_budget,updated_time,created_time` +
+      `${GRAPH}/${acct}/campaigns?fields=id,name,objective,effective_status,status,daily_budget,lifetime_budget,updated_time,created_time,start_time,stop_time` +
         `&limit=${limit}${effective}&access_token=${token}`,
     );
     campaigns = r.data ?? [];
   } catch (e) {
     warnings.push(`campaigns: ${sanitizeMetaError(e)}`);
+    logEvent("meta.campaigns.failed", {
+      request_id: requestId,
+      organization_id: orgId,
+      ad_account_id: sel.account.account_id,
+      error_code: sanitizeMetaError(e),
+      duration_ms: Date.now() - started,
+    });
     return json({
       account: { id: sel.account.id, name: sel.account.name, currency: sel.account.currency },
       campaigns: [],
@@ -92,26 +108,26 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Fetch insights per campaign (batched sequentially — small N)
   const timeRange = encodeURIComponent(JSON.stringify({ since: from, until: to }));
+  const insightsFields =
+    "spend,impressions,reach,clicks,ctr,cpc,cpm,frequency,actions,action_values,cost_per_action_type,purchase_roas";
   const enriched: any[] = [];
   for (const c of campaigns) {
     let ins: any = null;
     try {
       const r = await gfetch(
-        `${GRAPH}/${c.id}/insights?fields=spend,impressions,clicks,actions,action_values,ctr,cpc&time_range=${timeRange}&access_token=${token}`,
+        `${GRAPH}/${c.id}/insights?fields=${insightsFields}&time_range=${timeRange}&access_token=${token}`,
       );
       ins = (r.data ?? [])[0] ?? null;
     } catch (e) {
       warnings.push(`insights_${c.id}: ${sanitizeMetaError(e)}`);
     }
-    const spend = num(ins?.spend) ?? 0;
-    const leads = sumActions(ins?.actions, ["lead", "onsite_conversion.lead_grouped"]);
-    const revenue = sumActions(ins?.action_values, [
-      "offsite_conversion.fb_pixel_purchase",
-      "purchase",
-      "onsite_conversion.purchase",
-    ]);
+    const spend = safeNum(ins?.spend);
+    const leads = extractLeadCount(ins?.actions);
+    const conversions = extractConversionCount(ins?.actions);
+    const revenue = extractPurchaseValue(ins?.action_values);
+    const roas = extractRoas(ins?.purchase_roas) ??
+      (spend !== null && spend > 0 && revenue > 0 ? revenue / spend : null);
     enriched.push({
       id: c.id,
       name: c.name,
@@ -121,19 +137,35 @@ Deno.serve(async (req) => {
       effective_status: c.effective_status,
       dailyBudget: c.daily_budget ? Number(c.daily_budget) / 100 : 0,
       lifetimeBudget: c.lifetime_budget ? Number(c.lifetime_budget) / 100 : null,
-      spend,
-      impressions: num(ins?.impressions) ?? 0,
-      clicks: num(ins?.clicks) ?? 0,
-      ctr: num(ins?.ctr),
-      cpc: num(ins?.cpc),
+      startTime: c.start_time ?? null,
+      stopTime: c.stop_time ?? null,
+      spend: spend ?? 0,
+      impressions: safeNum(ins?.impressions) ?? 0,
+      reach: safeNum(ins?.reach) ?? 0,
+      clicks: safeNum(ins?.clicks) ?? 0,
+      ctr: safeNum(ins?.ctr),
+      cpc: safeNum(ins?.cpc),
+      cpm: safeNum(ins?.cpm),
+      frequency: safeNum(ins?.frequency),
       leads,
-      cpl: leads > 0 ? spend / leads : null,
-      roas: spend > 0 && revenue > 0 ? revenue / spend : null,
+      conversions,
+      cpl: extractCostPerLead(ins?.cost_per_action_type, spend, leads),
+      roas,
       createdAt: c.created_time,
       updatedAt: c.updated_time,
       createdByAI: false,
     });
   }
+
+  logEvent("meta.campaigns.loaded", {
+    request_id: requestId,
+    organization_id: orgId,
+    connection_id: sel.connection.id,
+    ad_account_id: sel.account.account_id,
+    count: enriched.length,
+    duration_ms: Date.now() - started,
+    warnings: warnings.length,
+  });
 
   return json({
     account: {
@@ -145,6 +177,7 @@ Deno.serve(async (req) => {
     period: { date_from: from, date_to: to },
     campaigns: enriched,
     warnings,
+    request_id: requestId,
     data_source: "marketing_api",
     synced_at: new Date().toISOString(),
   });
