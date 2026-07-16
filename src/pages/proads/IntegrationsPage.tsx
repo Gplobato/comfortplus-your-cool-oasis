@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import * as Icons from "lucide-react";
 import { PageHeader } from "@/components/proads/PageHeader";
@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 
 const statusMap: Record<IntegrationStatus, { label: string; className: string }> = {
   connected: { label: "Conectado", className: "bg-success-soft text-success" },
@@ -40,87 +41,35 @@ const categoryLabel: Record<Integration["category"], string> = {
   media: "Mídia",
 };
 
-type MetaAsset = {
-  id: string;
-  asset_type: "business" | "ad_account" | string;
-  external_id: string;
-  name: string | null;
-  currency: string | null;
-  timezone: string | null;
-  status: string | null;
-  selected: boolean;
-};
-
-type MetaStatus = {
-  connected: boolean;
-  connection: {
-    id: string;
-    display_name: string | null;
-    status: "pending" | "active" | "degraded" | "reauth_required" | "revoked" | "error";
-    granted_scopes: string[] | null;
-    token_expires_at: string | null;
-    last_success_at: string | null;
-    last_health_check_at: string | null;
-    last_error_message_sanitized: string | null;
-    created_at: string;
-  } | null;
-  assets: MetaAsset[];
-};
-
 const metaStatusBadge: Record<string, { label: string; className: string }> = {
-  active: { label: "Conectado", className: "bg-success-soft text-success" },
-  pending: { label: "Pendente", className: "bg-warning-soft text-warning" },
+  connected: { label: "Conectado", className: "bg-success-soft text-success" },
   degraded: { label: "Degradado", className: "bg-warning-soft text-warning" },
-  reauth_required: { label: "Reautorizar", className: "bg-warning-soft text-warning" },
+  expired: { label: "Reautorizar", className: "bg-warning-soft text-warning" },
   error: { label: "Erro", className: "bg-destructive/10 text-destructive" },
-  revoked: { label: "Revogado", className: "bg-muted text-muted-foreground" },
+  disconnected: { label: "Desconectado", className: "bg-muted text-muted-foreground" },
+  connecting: { label: "Conectando", className: "bg-muted text-muted-foreground" },
 };
 
 function MetaCard() {
   const { activeOrg } = useOrganization();
-  const [status, setStatus] = useState<MetaStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+  const meta = useMetaIntegration();
   const [busy, setBusy] = useState<null | "connect" | "test" | "disconnect" | "select">(null);
   const [params, setParams] = useSearchParams();
 
-  const load = useCallback(async () => {
-    if (!activeOrg) return;
-    setLoading(true);
-    try {
-      const session = (await supabase.auth.getSession()).data.session;
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-connection?action=status&organization_id=${activeOrg.id}`;
-      const r = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${session?.access_token ?? ""}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
-      setStatus(j);
-    } catch (e: any) {
-      toast.error("Falha ao carregar status Meta", { description: e?.message });
-    } finally {
-      setLoading(false);
-    }
-  }, [activeOrg]);
-
-  useEffect(() => { load(); }, [load]);
-
   // Handle OAuth return
   useEffect(() => {
-    const meta = params.get("meta");
-    if (!meta) return;
-    if (meta === "connected") toast.success("Meta conectada com sucesso");
-    else if (meta === "error") {
+    const flag = params.get("meta");
+    if (!flag) return;
+    if (flag === "connected") toast.success("Meta conectada com sucesso");
+    else if (flag === "error") {
       toast.error("Falha ao conectar Meta", {
         description: params.get("detail") || params.get("reason") || "erro desconhecido",
       });
     }
     params.delete("meta"); params.delete("reason"); params.delete("detail");
     setParams(params, { replace: true });
-    load();
-  }, [params, setParams, load]);
+    meta.refreshStatus();
+  }, [params, setParams, meta]);
 
   const handleConnect = async () => {
     if (!activeOrg) return;
@@ -138,52 +87,52 @@ function MetaCard() {
     }
   };
 
-  const call = async (body: any, msg: string) => {
-    const { data, error } = await supabase.functions.invoke("meta-connection", { body });
-    if (error) throw error;
-    if (data?.error) throw new Error(data.error);
-    toast.success(msg);
-    await load();
-  };
-
   const handleTest = async () => {
     if (!activeOrg) return;
     setBusy("test");
-    try { await call({ action: "test", organization_id: activeOrg.id }, "Conexão OK"); }
-    catch (e: any) { toast.error("Teste falhou", { description: e?.message }); }
-    finally { setBusy(null); }
+    try {
+      const { data, error } = await supabase.functions.invoke("meta-connection", {
+        body: { action: "test", organization_id: activeOrg.id },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success("Conexão OK");
+      await meta.refreshStatus();
+    } catch (e: any) {
+      toast.error("Teste falhou", { description: e?.message });
+    } finally { setBusy(null); }
   };
 
   const handleDisconnect = async () => {
     if (!activeOrg) return;
     if (!confirm("Desconectar a Meta desta organização?")) return;
     setBusy("disconnect");
-    try { await call({ action: "disconnect", organization_id: activeOrg.id }, "Meta desconectada"); }
-    catch (e: any) { toast.error("Falha ao desconectar", { description: e?.message }); }
-    finally { setBusy(null); }
+    try {
+      const { data, error } = await supabase.functions.invoke("meta-connection", {
+        body: { action: "disconnect", organization_id: activeOrg.id },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success("Meta desconectada");
+      await meta.refreshStatus();
+    } catch (e: any) {
+      toast.error("Falha ao desconectar", { description: e?.message });
+    } finally { setBusy(null); }
   };
 
   const handleSelect = async (assetId: string) => {
-    if (!activeOrg) return;
     setBusy("select");
-    try { await call({ action: "select_account", organization_id: activeOrg.id, asset_id: assetId }, "Conta selecionada"); }
-    catch (e: any) { toast.error("Falha ao selecionar", { description: e?.message }); }
-    finally { setBusy(null); }
+    try {
+      await meta.selectAdAccount(assetId);
+      toast.success("Conta selecionada");
+      // Initial sync
+      meta.sync().catch(() => {});
+    } catch (e: any) {
+      toast.error("Falha ao selecionar", { description: e?.message });
+    } finally { setBusy(null); }
   };
 
-  const adAccounts = useMemo(
-    () => (status?.assets ?? []).filter((a) => a.asset_type === "ad_account"),
-    [status],
-  );
-  const businesses = useMemo(
-    () => (status?.assets ?? []).filter((a) => a.asset_type === "business"),
-    [status],
-  );
-  const selected = adAccounts.find((a) => a.selected) ?? null;
-
-  const connected = status?.connected && status.connection?.status !== "revoked";
-  const s = status?.connection?.status;
-  const badge = s ? metaStatusBadge[s] ?? metaStatusBadge.active : null;
+  const badge = metaStatusBadge[meta.connectionStatus] ?? metaStatusBadge.disconnected;
 
   return (
     <Card className="p-4 shadow-card">
@@ -199,16 +148,12 @@ function MetaCard() {
             </p>
           </div>
         </div>
-        {badge ? (
-          <Badge className={cn("border-0", badge.className)}>{badge.label}</Badge>
-        ) : (
-          <Badge className="border-0 bg-muted text-muted-foreground">Desconectado</Badge>
-        )}
+        <Badge className={cn("border-0", badge.className)}>{badge.label}</Badge>
       </div>
 
-      {loading ? (
+      {meta.loading ? (
         <p className="mt-4 text-xs text-muted-foreground">Carregando status...</p>
-      ) : !connected ? (
+      ) : !meta.connected ? (
         <div className="mt-4 space-y-3">
           <p className="text-xs text-muted-foreground">
             Ao conectar, o ProAds solicita apenas <code className="text-[10px]">ads_read</code> e{" "}
@@ -227,43 +172,37 @@ function MetaCard() {
           <div className="grid grid-cols-2 gap-2 text-[11px]">
             <div>
               <p className="text-muted-foreground">Usuário conectado</p>
-              <p className="font-semibold">{status?.connection?.display_name ?? "—"}</p>
+              <p className="font-semibold">{meta.status?.connected_user?.name ?? "—"}</p>
             </div>
             <div>
-              <p className="text-muted-foreground">Últ. verificação</p>
-              <p className="font-semibold">
-                {status?.connection?.last_health_check_at
-                  ? formatDateTime(status.connection.last_health_check_at)
-                  : "—"}
-              </p>
+              <p className="text-muted-foreground">Última sincronização</p>
+              <p className="font-semibold">{meta.lastSyncAt ? formatDateTime(meta.lastSyncAt) : "—"}</p>
             </div>
             <div>
-              <p className="text-muted-foreground">Escopos</p>
-              <p className="font-semibold truncate">
-                {(status?.connection?.granted_scopes ?? []).join(", ") || "—"}
-              </p>
+              <p className="text-muted-foreground">Token</p>
+              <p className="font-semibold capitalize">{meta.status?.token_status ?? "—"}</p>
             </div>
             <div>
-              <p className="text-muted-foreground">Business Managers</p>
-              <p className="font-semibold">{businesses.length}</p>
+              <p className="text-muted-foreground">Contas disponíveis</p>
+              <p className="font-semibold">{meta.availableAdAccounts.length}</p>
             </div>
           </div>
 
-          {status?.connection?.last_error_message_sanitized && (
+          {meta.lastError && (
             <div className="rounded-md border border-warning/40 bg-warning-soft/40 p-2 text-[11px] text-warning-foreground">
-              {status.connection.last_error_message_sanitized}
+              {meta.lastError}
             </div>
           )}
 
           <div>
             <Label className="text-[11px]">Conta de anúncio ativa</Label>
-            {adAccounts.length === 0 ? (
+            {meta.availableAdAccounts.length === 0 ? (
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Nenhuma conta de anúncios disponível. Verifique permissões no Meta Business.
               </p>
             ) : (
               <Select
-                value={selected?.id ?? ""}
+                value={meta.selectedAdAccount?.id ?? ""}
                 onValueChange={handleSelect}
                 disabled={busy === "select"}
               >
@@ -271,19 +210,27 @@ function MetaCard() {
                   <SelectValue placeholder="Selecione uma conta" />
                 </SelectTrigger>
                 <SelectContent>
-                  {adAccounts.map((a) => (
+                  {meta.availableAdAccounts.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
-                      {a.name ?? a.external_id} · {a.currency ?? "—"}
+                      {a.name} · {a.currency ?? "—"}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            )}
+            {meta.selectedAdAccount && (
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                ID: <code>{meta.selectedAdAccount.external_id}</code>
+              </p>
             )}
           </div>
 
           <div className="flex flex-wrap gap-2 pt-1">
             <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleTest} disabled={busy === "test"}>
               {busy === "test" ? "Testando..." : "Testar conexão"}
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => meta.sync().then(() => toast.success("Sincronizado")).catch((e) => toast.error(e?.message))}>
+              Sincronizar
             </Button>
             <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleConnect} disabled={busy === "connect"}>
               Reconectar
@@ -303,6 +250,7 @@ function MetaCard() {
     </Card>
   );
 }
+
 
 export default function IntegrationsPage() {
   const [items, setItems] = useState<Integration[]>([]);
