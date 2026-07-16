@@ -665,6 +665,14 @@ export type Database = {
       }
     }
     Functions: {
+      create_organization: {
+        Args: { _name: string; _slug: string }
+        Returns: {
+          id: string
+          name: string
+          slug: string
+        }[]
+      }
       has_role: {
         Args: {
           _org: string
