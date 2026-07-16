@@ -74,6 +74,8 @@ Deno.serve(async (req) => {
   const from = url.searchParams.get("date_from") || ymd(new Date(today.getTime() - 13 * 864e5));
   const to = url.searchParams.get("date_to") || ymd(today);
   const status = (url.searchParams.get("status") || "").toUpperCase();
+  const objective = (url.searchParams.get("objective") || "").toUpperCase();
+  const search = (url.searchParams.get("search") || "").toLowerCase();
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 100) || 100, 200);
 
   const acct = sel.account.graph_id;
