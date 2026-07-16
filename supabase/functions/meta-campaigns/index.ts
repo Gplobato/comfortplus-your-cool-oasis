@@ -28,6 +28,9 @@ const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const INSIGHTS_FIELDS =
   "campaign_id,campaign_name,spend,impressions,reach,clicks,unique_clicks,inline_link_clicks,ctr,cpc,cpm,frequency,actions,action_values,cost_per_action_type,purchase_roas";
 
+const CHILD_INSIGHTS_FIELDS =
+  "spend,impressions,reach,clicks,unique_clicks,inline_link_clicks,ctr,cpc,cpm,frequency,actions,action_values,cost_per_action_type,purchase_roas";
+
 async function gfetch(url: string) {
   const r = await fetch(url);
   const j = await r.json();
@@ -67,16 +70,66 @@ function statusFromEffective(s: string): "ACTIVE" | "PAUSED" | "ARCHIVED" | "DRA
   }
 }
 
-function enrichCampaign(c: any, ins: any | null) {
+function metricsFromInsights(ins: any | null, objective?: string | null) {
   const spend = safeNum(ins?.spend);
   const leads = extractLeadCount(ins?.actions);
   const conversions = extractConversionCount(ins?.actions);
   const linkClicks = extractLinkClicks(ins?.actions) || (safeNum(ins?.inline_link_clicks) ?? 0);
   const revenue = extractPurchaseValue(ins?.action_values);
-  const objective = normalizeObjective(c.objective);
   const { results, result_type } = extractResults(ins?.actions, objective);
   const roas = extractRoas(ins?.purchase_roas) ??
     (spend !== null && spend > 0 && revenue > 0 ? revenue / spend : null);
+  return {
+    spend: spend ?? 0,
+    impressions: safeNum(ins?.impressions) ?? 0,
+    reach: safeNum(ins?.reach) ?? 0,
+    clicks: safeNum(ins?.clicks) ?? 0,
+    unique_clicks: safeNum(ins?.unique_clicks) ?? 0,
+    link_clicks: linkClicks,
+    ctr: safeNum(ins?.ctr),
+    cpc: safeNum(ins?.cpc),
+    cpm: safeNum(ins?.cpm),
+    frequency: safeNum(ins?.frequency),
+    leads,
+    conversions,
+    revenue,
+    results,
+    result_type,
+    cpl: extractCostPerLead(ins?.cost_per_action_type, spend, leads),
+    cpr: extractCostPerResult(ins?.cost_per_action_type, spend, results, result_type),
+    roas,
+  };
+}
+
+function summarizeTargeting(t: any): string {
+  if (!t || typeof t !== "object") return "—";
+  const parts: string[] = [];
+  if (t.age_min != null || t.age_max != null) {
+    parts.push(`${t.age_min ?? "?"}-${t.age_max ?? "?"} anos`);
+  }
+  if (Array.isArray(t.genders) && t.genders.length) {
+    const map: Record<number, string> = { 1: "Homens", 2: "Mulheres" };
+    parts.push(t.genders.map((g: number) => map[g] ?? String(g)).join("/"));
+  }
+  const countries = t.geo_locations?.countries;
+  if (Array.isArray(countries) && countries.length) parts.push(countries.join(", "));
+  const cities = (t.geo_locations?.cities ?? [])
+    .map((c: any) => c?.name)
+    .filter(Boolean)
+    .slice(0, 3);
+  if (cities.length) parts.push(cities.join(", "));
+  const interests = (t.flexible_spec ?? [])
+    .flatMap((s: any) => s?.interests ?? [])
+    .map((i: any) => i?.name)
+    .filter(Boolean)
+    .slice(0, 3);
+  if (interests.length) parts.push(interests.join(", "));
+  return parts.length ? parts.join(" · ") : "Público amplo / personalizado";
+}
+
+function enrichCampaign(c: any, ins: any | null) {
+  const objective = normalizeObjective(c.objective);
+  const metrics = metricsFromInsights(ins, objective);
 
   const dailyBudget = budgetFromMeta(c.daily_budget);
   const lifetimeBudget = budgetFromMeta(c.lifetime_budget);
@@ -108,27 +161,57 @@ function enrichCampaign(c: any, ins: any | null) {
     budgetRemaining,
     startTime: c.start_time ?? null,
     stopTime: c.stop_time ?? null,
-    spend: spend ?? 0,
-    impressions: safeNum(ins?.impressions) ?? 0,
-    reach: safeNum(ins?.reach) ?? 0,
-    clicks: safeNum(ins?.clicks) ?? 0,
-    unique_clicks: safeNum(ins?.unique_clicks) ?? 0,
-    link_clicks: linkClicks,
-    ctr: safeNum(ins?.ctr),
-    cpc: safeNum(ins?.cpc),
-    cpm: safeNum(ins?.cpm),
-    frequency: safeNum(ins?.frequency),
-    leads,
-    conversions,
-    revenue,
-    results,
-    result_type,
-    cpl: extractCostPerLead(ins?.cost_per_action_type, spend, leads),
-    cpr: extractCostPerResult(ins?.cost_per_action_type, spend, results, result_type),
-    roas,
+    ...metrics,
     createdAt: c.created_time,
     updatedAt: c.updated_time,
     createdByAI: false,
+  };
+}
+
+function enrichAdSet(a: any, ins: any | null, objective: string) {
+  const metrics = metricsFromInsights(ins, objective);
+  return {
+    id: a.id,
+    campaign_id: a.campaign_id ?? null,
+    name: a.name,
+    status: statusFromEffective(a.effective_status),
+    effective_status: a.effective_status,
+    dailyBudget: budgetFromMeta(a.daily_budget) ?? 0,
+    lifetimeBudget: budgetFromMeta(a.lifetime_budget),
+    optimization_goal: a.optimization_goal ?? null,
+    billing_event: a.billing_event ?? null,
+    bid_strategy: a.bid_strategy ?? null,
+    targeting_summary: summarizeTargeting(a.targeting),
+    startTime: a.start_time ?? null,
+    endTime: a.end_time ?? null,
+    ...metrics,
+    createdAt: a.created_time ?? null,
+    updatedAt: a.updated_time ?? null,
+  };
+}
+
+function enrichAd(ad: any, ins: any | null, objective: string) {
+  const metrics = metricsFromInsights(ins, objective);
+  const creative = ad.creative ?? {};
+  return {
+    id: ad.id,
+    adset_id: ad.adset_id ?? null,
+    campaign_id: ad.campaign_id ?? null,
+    name: ad.name,
+    status: statusFromEffective(ad.effective_status),
+    effective_status: ad.effective_status,
+    creative: {
+      id: creative.id ?? null,
+      name: creative.name ?? null,
+      thumbnail_url: creative.thumbnail_url ?? creative.image_url ?? null,
+      object_type: creative.object_type ?? null,
+      title: creative.title ?? null,
+      body: creative.body ?? null,
+      cta: creative.call_to_action_type ?? null,
+    },
+    ...metrics,
+    createdAt: ad.created_time ?? null,
+    updatedAt: ad.updated_time ?? null,
   };
 }
 
@@ -173,70 +256,156 @@ Deno.serve(async (req) => {
   const warnings: string[] = [];
   const timeRange = encodeURIComponent(JSON.stringify({ since: from, until: to }));
 
-  // ---- Single campaign detail mode ----
+  // ---- Single campaign detail mode (+ adsets + ads hierarchy) ----
   if (campaignId) {
     try {
-      const [campRes, insRes, seriesRes] = await Promise.all([
+      const [
+        campRes,
+        insRes,
+        seriesRes,
+        adsetsRes,
+        adsetInsRes,
+        adsRes,
+        adInsRes,
+      ] = await Promise.allSettled([
         gfetch(
           `${GRAPH}/${campaignId}?fields=id,name,objective,effective_status,status,daily_budget,lifetime_budget,budget_remaining,updated_time,created_time,start_time,stop_time&access_token=${token}`,
         ),
         gfetch(
-          `${GRAPH}/${campaignId}/insights?fields=${INSIGHTS_FIELDS.replace("campaign_id,campaign_name,", "")}&time_range=${timeRange}&access_token=${token}`,
+          `${GRAPH}/${campaignId}/insights?fields=${CHILD_INSIGHTS_FIELDS}&time_range=${timeRange}&access_token=${token}`,
         ),
         gfetch(
           `${GRAPH}/${campaignId}/insights?fields=spend,impressions,reach,clicks,ctr,cpc,cpm,frequency,actions,cost_per_action_type&time_range=${timeRange}&time_increment=1&access_token=${token}`,
         ),
+        gfetchAll(
+          `${GRAPH}/${campaignId}/adsets?fields=id,name,campaign_id,effective_status,status,daily_budget,lifetime_budget,optimization_goal,billing_event,bid_strategy,targeting,start_time,end_time,created_time,updated_time&limit=100&access_token=${token}`,
+          4,
+        ),
+        gfetchAll(
+          `${GRAPH}/${campaignId}/insights?level=adset&fields=adset_id,adset_name,${CHILD_INSIGHTS_FIELDS}&time_range=${timeRange}&limit=200&access_token=${token}`,
+          4,
+        ),
+        gfetchAll(
+          `${GRAPH}/${campaignId}/ads?fields=id,name,adset_id,campaign_id,effective_status,status,created_time,updated_time,creative{id,name,thumbnail_url,image_url,object_type,body,title,call_to_action_type}&limit=100&access_token=${token}`,
+          4,
+        ),
+        gfetchAll(
+          `${GRAPH}/${campaignId}/insights?level=ad&fields=ad_id,ad_name,adset_id,${CHILD_INSIGHTS_FIELDS}&time_range=${timeRange}&limit=200&access_token=${token}`,
+          4,
+        ),
       ]);
 
-      // Adset budgets if campaign-level empty
+      if (campRes.status !== "fulfilled") {
+        throw campRes.reason;
+      }
+
+      const campObj = campRes.value;
+      const objective = normalizeObjective(campObj.objective);
+
+      // ABO budget rollup from adsets list
       let adsetDaily: number | null = null;
       let adsetLifetime: number | null = null;
-      if (!campRes.daily_budget && !campRes.lifetime_budget) {
-        try {
-          const adsets = await gfetchAll(
-            `${GRAPH}/${campaignId}/adsets?fields=daily_budget,lifetime_budget,effective_status&limit=100&access_token=${token}`,
-          );
-          let dSum = 0;
-          let lSum = 0;
-          let hasD = false;
-          let hasL = false;
-          for (const a of adsets) {
-            const d = budgetFromMeta(a.daily_budget);
-            const l = budgetFromMeta(a.lifetime_budget);
-            if (d != null) {
-              dSum += d;
-              hasD = true;
-            }
-            if (l != null) {
-              lSum += l;
-              hasL = true;
-            }
-          }
-          adsetDaily = hasD ? dSum : null;
-          adsetLifetime = hasL ? lSum : null;
-        } catch (e) {
-          warnings.push(`adsets: ${sanitizeMetaError(e)}`);
-        }
+      const rawAdsets = adsetsRes.status === "fulfilled" ? adsetsRes.value : [];
+      if (adsetsRes.status === "rejected") {
+        warnings.push(`adsets: ${sanitizeMetaError(adsetsRes.reason)}`);
       }
-      campRes._adset_daily_budget = adsetDaily;
-      campRes._adset_lifetime_budget = adsetLifetime;
+      if (!campObj.daily_budget && !campObj.lifetime_budget && rawAdsets.length) {
+        let dSum = 0;
+        let lSum = 0;
+        let hasD = false;
+        let hasL = false;
+        for (const a of rawAdsets) {
+          const d = budgetFromMeta(a.daily_budget);
+          const l = budgetFromMeta(a.lifetime_budget);
+          if (d != null) {
+            dSum += d;
+            hasD = true;
+          }
+          if (l != null) {
+            lSum += l;
+            hasL = true;
+          }
+        }
+        adsetDaily = hasD ? dSum : null;
+        adsetLifetime = hasL ? lSum : null;
+      }
+      campObj._adset_daily_budget = adsetDaily;
+      campObj._adset_lifetime_budget = adsetLifetime;
 
-      const campaign = enrichCampaign(campRes, (insRes.data ?? [])[0] ?? null);
-      const series = (seriesRes.data ?? []).map((row: any) => {
-        const spend = safeNum(row.spend);
-        const leads = extractLeadCount(row.actions);
-        const { results, result_type } = extractResults(row.actions, campaign.objective);
-        return {
-          date: row.date_start,
-          spend: spend ?? 0,
-          impressions: safeNum(row.impressions) ?? 0,
-          clicks: safeNum(row.clicks) ?? 0,
-          cpm: safeNum(row.cpm),
-          cpl: extractCostPerLead(row.cost_per_action_type, spend, leads),
-          leads,
-          results,
-          cpr: extractCostPerResult(row.cost_per_action_type, spend, results, result_type),
-        };
+      const campIns = insRes.status === "fulfilled"
+        ? (insRes.value.data ?? [])[0] ?? null
+        : null;
+      if (insRes.status === "rejected") {
+        warnings.push(`insights: ${sanitizeMetaError(insRes.reason)}`);
+      }
+
+      const campaign = enrichCampaign(campObj, campIns);
+
+      let series: any[] = [];
+      if (seriesRes.status === "fulfilled") {
+        series = (seriesRes.value.data ?? []).map((row: any) => {
+          const spend = safeNum(row.spend);
+          const leads = extractLeadCount(row.actions);
+          const { results, result_type } = extractResults(row.actions, campaign.objective);
+          return {
+            date: row.date_start,
+            spend: spend ?? 0,
+            impressions: safeNum(row.impressions) ?? 0,
+            clicks: safeNum(row.clicks) ?? 0,
+            cpm: safeNum(row.cpm),
+            cpl: extractCostPerLead(row.cost_per_action_type, spend, leads),
+            leads,
+            results,
+            cpr: extractCostPerResult(row.cost_per_action_type, spend, results, result_type),
+          };
+        });
+      } else {
+        warnings.push(`series: ${sanitizeMetaError(seriesRes.reason)}`);
+      }
+
+      const adsetInsById = new Map<string, any>();
+      if (adsetInsRes.status === "fulfilled") {
+        for (const row of adsetInsRes.value) {
+          const id = String(row.adset_id ?? "");
+          if (id) adsetInsById.set(id, row);
+        }
+      } else {
+        warnings.push(`adset_insights: ${sanitizeMetaError(adsetInsRes.reason)}`);
+      }
+
+      const adsets = rawAdsets
+        .map((a) => enrichAdSet(a, adsetInsById.get(a.id) ?? null, objective))
+        .sort((a, b) => b.spend - a.spend);
+
+      const adInsById = new Map<string, any>();
+      if (adInsRes.status === "fulfilled") {
+        for (const row of adInsRes.value) {
+          const id = String(row.ad_id ?? "");
+          if (id) adInsById.set(id, row);
+        }
+      } else {
+        warnings.push(`ad_insights: ${sanitizeMetaError(adInsRes.reason)}`);
+      }
+
+      const rawAds = adsRes.status === "fulfilled" ? adsRes.value : [];
+      if (adsRes.status === "rejected") {
+        warnings.push(`ads: ${sanitizeMetaError(adsRes.reason)}`);
+      }
+
+      const ads = rawAds
+        .map((ad) => enrichAd(ad, adInsById.get(ad.id) ?? null, objective))
+        .sort((a, b) => b.spend - a.spend);
+
+      logEvent("meta.campaigns.loaded", {
+        request_id: requestId,
+        organization_id: orgId,
+        connection_id: sel.connection.id,
+        ad_account_id: sel.account.account_id,
+        count: 1,
+        adsets: adsets.length,
+        ads: ads.length,
+        duration_ms: Date.now() - started,
+        warnings: warnings.length,
       });
 
       return json({
@@ -249,13 +418,15 @@ Deno.serve(async (req) => {
         period: { date_from: from, date_to: to, label: periodLabel(from, to) },
         campaign,
         series,
+        adsets,
+        ads,
         warnings,
         request_id: requestId,
         data_source: "marketing_api",
         synced_at: new Date().toISOString(),
       });
     } catch (e) {
-      return json({ error: "campaign_fetch_failed", message: sanitizeMetaError(e) }, 502);
+      return json({ error: "campaign_fetch_failed", message: sanitizeMetaError(e), request_id: requestId }, 502);
     }
   }
 

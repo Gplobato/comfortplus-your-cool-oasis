@@ -193,6 +193,78 @@ export function useMetaCampaigns(opts?: {
   });
 }
 
+export type MetaAdSetRow = {
+  id: string;
+  campaign_id: string | null;
+  name: string;
+  status: MetaCampaignRow["status"];
+  effective_status: string;
+  dailyBudget: number;
+  lifetimeBudget: number | null;
+  optimization_goal: string | null;
+  billing_event: string | null;
+  bid_strategy: string | null;
+  targeting_summary: string;
+  startTime: string | null;
+  endTime: string | null;
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  link_clicks: number;
+  ctr: number | null;
+  cpc: number | null;
+  cpm: number | null;
+  frequency: number | null;
+  leads: number;
+  conversions: number;
+  revenue: number;
+  results: number;
+  result_type: string;
+  cpl: number | null;
+  cpr: number | null;
+  roas: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type MetaAdRow = {
+  id: string;
+  adset_id: string | null;
+  campaign_id: string | null;
+  name: string;
+  status: MetaCampaignRow["status"];
+  effective_status: string;
+  creative: {
+    id: string | null;
+    name: string | null;
+    thumbnail_url: string | null;
+    object_type: string | null;
+    title: string | null;
+    body: string | null;
+    cta: string | null;
+  };
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  link_clicks: number;
+  ctr: number | null;
+  cpc: number | null;
+  cpm: number | null;
+  frequency: number | null;
+  leads: number;
+  conversions: number;
+  revenue: number;
+  results: number;
+  result_type: string;
+  cpl: number | null;
+  cpr: number | null;
+  roas: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
 export function useMetaCampaignDetail(
   campaignId: string | undefined,
   opts?: { dateFrom?: string; dateTo?: string },
@@ -213,18 +285,23 @@ export function useMetaCampaignDetail(
       }),
       "detail",
       campaignId,
+      "hierarchy",
     ],
     queryFn: async () => {
       const j = await fetchJson("meta-campaigns", params);
       return j as {
         campaign: MetaCampaignRow;
         series: MetaSeriesPoint[];
+        adsets: MetaAdSetRow[];
+        ads: MetaAdRow[];
         account: any;
         period: { date_from: string; date_to: string; label: string };
         warnings: string[];
+        request_id?: string;
       };
     },
     enabled: !!organizationId && !!selectedAdAccount && connected && !!campaignId,
     staleTime: 90_000,
+    placeholderData: (prev) => prev,
   });
 }

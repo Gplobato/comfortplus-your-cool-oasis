@@ -58,5 +58,6 @@ export function metaInvalidationKeys(orgId: string | null) {
     ["meta", "dashboard", orgId],
     ["meta", "campaigns", orgId],
     ["meta", "insights", orgId],
+    ["meta", "hierarchy", orgId],
   ] as const;
 }
