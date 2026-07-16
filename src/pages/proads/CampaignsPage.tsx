@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { useDemoMode } from "@/contexts/DemoModeContext";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { useMetaCampaigns } from "@/hooks/useMetaData";
+import { metaKeys } from "@/lib/metaKeys";
 
 type Row = {
   id: string; name: string; platform: string; objective: string; status: any;
@@ -84,7 +85,7 @@ export default function CampaignsPage() {
         description={useReal ? `Meta · ${meta.selectedAdAccount?.name}` : "Todas as suas campanhas em um único lugar."}
         actions={
           <>
-            <Button variant="outline" size="sm" className="h-9 gap-2" onClick={() => qc.invalidateQueries({ queryKey: ["meta", "campaigns"] })} disabled={!useReal || camps.isFetching}>
+            <Button variant="outline" size="sm" className="h-9 gap-2" onClick={() => qc.invalidateQueries({ queryKey: metaKeys.campaigns(meta.organizationId, meta.selectedAdAccount?.id ?? null) })} disabled={!useReal || camps.isFetching}>
               <RefreshCw className={`h-3.5 w-3.5 ${camps.isFetching ? "animate-spin" : ""}`} /> Atualizar
             </Button>
             <Button variant="outline" size="sm" className="h-9 gap-2" onClick={() => navigate("/campanhas/nova?ai=1")}>
