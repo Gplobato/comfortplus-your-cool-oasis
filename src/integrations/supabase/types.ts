@@ -419,6 +419,7 @@ export type Database = {
           last_error_message_sanitized: string | null
           last_health_check_at: string | null
           last_success_at: string | null
+          last_sync_at: string | null
           organization_id: string
           provider: string
           revoked_at: string | null
@@ -439,6 +440,7 @@ export type Database = {
           last_error_message_sanitized?: string | null
           last_health_check_at?: string | null
           last_success_at?: string | null
+          last_sync_at?: string | null
           organization_id: string
           provider?: string
           revoked_at?: string | null
@@ -459,6 +461,7 @@ export type Database = {
           last_error_message_sanitized?: string | null
           last_health_check_at?: string | null
           last_success_at?: string | null
+          last_sync_at?: string | null
           organization_id?: string
           provider?: string
           revoked_at?: string | null
