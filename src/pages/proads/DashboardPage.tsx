@@ -32,6 +32,7 @@ import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { useMetaDashboard, useMetaCampaigns } from "@/hooks/useMetaData";
 import { EmptyState } from "@/components/proads/EmptyState";
 import { toast } from "sonner";
+import { metaInvalidationKeys } from "@/lib/metaKeys";
 
 const PERIOD_DAYS: Record<string, number> = { "7d": 7, "14d": 14, "30d": 30 };
 
@@ -89,8 +90,9 @@ export default function DashboardPage() {
 
   const onRefresh = async () => {
     if (useReal) {
-      await qc.invalidateQueries({ queryKey: ["meta", "dashboard", meta.organizationId] });
-      await qc.invalidateQueries({ queryKey: ["meta", "campaigns", meta.organizationId] });
+      await Promise.all(
+        metaInvalidationKeys(meta.organizationId).map((k) => qc.invalidateQueries({ queryKey: k })),
+      );
       toast.success("Dados atualizados");
     } else {
       toast.success("Modo demo");
