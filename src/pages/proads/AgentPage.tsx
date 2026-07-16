@@ -56,6 +56,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { campaigns as mockCampaigns } from "@/mocks/data";
 import brandLogo from "@/assets/brand-logo.png";
+import { useMetaAgentContext } from "@/hooks/useMetaAgentContext";
 
 const TEXT_MODELS = [
   { value: "zai-org/glm-5.2", label: "GLM 5.2 (padrão)" },
