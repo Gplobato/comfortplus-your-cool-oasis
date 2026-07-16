@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
+import { metaKeys } from "@/lib/metaKeys";
 
 async function fetchJson(path: string, params: Record<string, string>) {
   const session = (await supabase.auth.getSession()).data.session;
@@ -40,7 +41,11 @@ export function useMetaDashboard(opts?: { dateFrom?: string; dateTo?: string; ca
   if (opts?.campaignStatus) params.campaign_status = opts.campaignStatus;
 
   return useQuery({
-    queryKey: ["meta", "dashboard", organizationId, selectedAdAccount?.id, opts?.dateFrom, opts?.dateTo, opts?.campaignStatus],
+    queryKey: metaKeys.dashboard(organizationId, selectedAdAccount?.id ?? null, {
+      from: opts?.dateFrom,
+      to: opts?.dateTo,
+      status: opts?.campaignStatus,
+    }),
     queryFn: () => fetchJson("meta-dashboard", params) as Promise<MetaDashboard>,
     enabled: !!organizationId && !!selectedAdAccount && connected,
     staleTime: 60_000,
@@ -66,7 +71,11 @@ export function useMetaCampaigns(opts?: { status?: string; dateFrom?: string; da
   if (opts?.dateTo) params.date_to = opts.dateTo;
 
   return useQuery({
-    queryKey: ["meta", "campaigns", organizationId, selectedAdAccount?.id, opts?.status, opts?.dateFrom, opts?.dateTo],
+    queryKey: metaKeys.campaigns(organizationId, selectedAdAccount?.id ?? null, {
+      status: opts?.status,
+      from: opts?.dateFrom,
+      to: opts?.dateTo,
+    }),
     queryFn: async () => {
       const j = await fetchJson("meta-campaigns", params);
       return j as { campaigns: MetaCampaignRow[]; account: any; warnings: string[]; data_source: string; synced_at: string };

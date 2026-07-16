@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "./OrganizationContext";
 import { toast } from "sonner";
+import { metaInvalidationKeys, metaKeys } from "@/lib/metaKeys";
 
 export type MetaAdAccount = {
   id: string;
@@ -102,14 +103,20 @@ export function MetaIntegrationProvider({ children }: { children: ReactNode }) {
   const orgId = activeOrg?.id ?? null;
 
   const q = useQuery({
-    queryKey: ["meta", "status", orgId],
+    queryKey: metaKeys.status(orgId),
     queryFn: () => fetchStatus(orgId!),
     enabled: !!orgId,
     staleTime: 30_000,
   });
 
+  const invalidateAll = useCallback(async () => {
+    await Promise.all(
+      metaInvalidationKeys(orgId).map((k) => qc.invalidateQueries({ queryKey: k })),
+    );
+  }, [qc, orgId]);
+
   const refreshStatus = useCallback(async () => {
-    await qc.invalidateQueries({ queryKey: ["meta", "status", orgId] });
+    await qc.invalidateQueries({ queryKey: metaKeys.status(orgId) });
   }, [qc, orgId]);
 
   const selectAdAccount = useCallback(
@@ -120,13 +127,10 @@ export function MetaIntegrationProvider({ children }: { children: ReactNode }) {
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["meta", "status", orgId] }),
-        qc.invalidateQueries({ queryKey: ["meta", "dashboard", orgId] }),
-        qc.invalidateQueries({ queryKey: ["meta", "campaigns", orgId] }),
-      ]);
+      if (import.meta.env.DEV) console.debug("[meta] account.selected", { orgId, assetId });
+      await invalidateAll();
     },
-    [orgId, qc],
+    [orgId, invalidateAll],
   );
 
   const sync = useCallback(async () => {
@@ -138,12 +142,8 @@ export function MetaIntegrationProvider({ children }: { children: ReactNode }) {
     if ((data as any)?.error) throw new Error((data as any).error);
     const warns: string[] = (data as any)?.warnings ?? [];
     if (warns.length) toast.warning(`Sincronização concluída com avisos: ${warns[0]}`);
-    await Promise.all([
-      qc.invalidateQueries({ queryKey: ["meta", "status", orgId] }),
-      qc.invalidateQueries({ queryKey: ["meta", "dashboard", orgId] }),
-      qc.invalidateQueries({ queryKey: ["meta", "campaigns", orgId] }),
-    ]);
-  }, [orgId, qc]);
+    await invalidateAll();
+  }, [orgId, invalidateAll]);
 
   const status = q.data ?? null;
 
