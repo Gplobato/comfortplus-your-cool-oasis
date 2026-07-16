@@ -56,6 +56,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { campaigns as mockCampaigns } from "@/mocks/data";
 import brandLogo from "@/assets/brand-logo.png";
+import { useMetaAgentContext } from "@/hooks/useMetaAgentContext";
 
 const TEXT_MODELS = [
   { value: "zai-org/glm-5.2", label: "GLM 5.2 (padrão)" },
@@ -155,6 +156,8 @@ export default function AgentPage() {
   const endRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const metaContext = useMetaAgentContext();
+
 
   const active = threads.find((t) => t.id === activeId) ?? threads[0];
 
@@ -311,6 +314,7 @@ export default function AgentPage() {
         videoModel,
         useBrandLogo: brandOn,
         attachments: attachmentUrls,
+        metaContext,
       };
 
       if (request.type === "image") {
@@ -391,6 +395,7 @@ export default function AgentPage() {
           useBrandLogo: brandOn,
           attachments: attachmentUrls,
           deferMedia: true,
+          metaContext,
         },
       });
 
@@ -589,6 +594,7 @@ export default function AgentPage() {
           useBrandLogo: brandOn,
           attachments: attachmentUrls,
           deferMedia: true,
+          metaContext,
         },
       });
 

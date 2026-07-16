@@ -177,6 +177,17 @@ export default function DashboardPage() {
       />
 
       <div className="space-y-6 p-4 md:p-8">
+        {!useReal && demoMode && (
+          <Card className="flex items-center gap-2 border-accent/40 bg-accent/5 p-3 shadow-card">
+            <Badge variant="outline" className="border-accent/40 bg-accent/10 text-accent">
+              Dados demonstrativos
+            </Badge>
+            <p className="text-xs text-muted-foreground">
+              Modo demo ativo. Conecte a Meta em Integrações para ver números reais.
+            </p>
+          </Card>
+        )}
+
         {meta.connected && !meta.selectedAdAccount && (
           <Card className="flex items-center justify-between border-warning/40 bg-warning-soft/40 p-4 shadow-card">
             <div>
