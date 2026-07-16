@@ -33,6 +33,7 @@ import { useMetaDashboard, useMetaCampaigns } from "@/hooks/useMetaData";
 import { EmptyState } from "@/components/proads/EmptyState";
 import { toast } from "sonner";
 import { metaInvalidationKeys } from "@/lib/metaKeys";
+import { metaErrorMessage } from "@/lib/metaErrors";
 
 const PERIOD_DAYS: Record<string, number> = { "7d": 7, "14d": 14, "30d": 30 };
 
@@ -101,7 +102,8 @@ export default function DashboardPage() {
 
   const onSync = async () => {
     if (!meta.connected) {
-      toast.error("Conecte a Meta primeiro");
+      const m = metaErrorMessage("token_expired");
+      toast.error(m.title, { description: m.description });
       return;
     }
     toast.loading("Sincronizando com Meta...", { id: "meta-sync" });
@@ -109,9 +111,12 @@ export default function DashboardPage() {
       await meta.sync();
       toast.success("Sincronização concluída", { id: "meta-sync" });
     } catch (e: any) {
-      toast.error(e?.message ?? "Falha na sincronização", { id: "meta-sync" });
+      const m = metaErrorMessage(e);
+      toast.error(m.title, { id: "meta-sync", description: m.description });
     }
   };
+
+  const dashError = dash.error ? metaErrorMessage(dash.error) : null;
 
   return (
     <>
@@ -134,7 +139,10 @@ export default function DashboardPage() {
                   value={meta.selectedAdAccount?.id ?? ""}
                   onValueChange={async (v) => {
                     try { await meta.selectAdAccount(v); toast.success("Conta atualizada"); }
-                    catch (e: any) { toast.error(e?.message ?? "Falha ao selecionar"); }
+                    catch (e: any) {
+                      const m = metaErrorMessage(e);
+                      toast.error(m.title, { description: m.description });
+                    }
                   }}
                 >
                   <SelectTrigger className="h-7 w-[160px] border-0 bg-transparent text-[11px]">
@@ -202,9 +210,16 @@ export default function DashboardPage() {
           </Card>
         )}
 
+        {dashError && useReal && (
+          <Card className="border-destructive/40 bg-destructive/5 p-3 shadow-card">
+            <p className="text-sm font-semibold">{dashError.title}</p>
+            <p className="text-xs text-muted-foreground">{dashError.description}</p>
+          </Card>
+        )}
+
         {dash.data?.warnings && dash.data.warnings.length > 0 && (
           <Card className="border-warning/40 bg-warning-soft/30 p-3 text-[11px] text-warning-foreground shadow-card">
-            Aviso Meta: {dash.data.warnings.join(" · ")}
+            {metaErrorMessage(dash.data.warnings[0]).description}
           </Card>
         )}
 
