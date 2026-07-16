@@ -54,9 +54,11 @@ import {
 import type { AgentMessage, AgentRole } from "@/types/proads";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { campaigns as mockCampaigns } from "@/mocks/data";
 import brandLogo from "@/assets/brand-logo.png";
 import { useMetaAgentContext } from "@/hooks/useMetaAgentContext";
+import { saveAiCreative, useMetaCampaigns } from "@/hooks/useMetaData";
+import { useOrganization } from "@/contexts/OrganizationContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 const TEXT_MODELS = [
   { value: "zai-org/glm-5.2", label: "GLM 5.2 (padrão)" },
@@ -157,7 +159,29 @@ export default function AgentPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const metaContext = useMetaAgentContext();
+  const metaCampaigns = useMetaCampaigns({ status: "ACTIVE" });
+  const campaignOptions = metaCampaigns.data?.campaigns ?? [];
+  const { activeOrg } = useOrganization();
+  const { user } = useAuth();
 
+  const persistAiImages = (images?: { url: string; label?: string; aspect?: string }[] | null) => {
+    if (!activeOrg?.id || !images?.length) return;
+    void Promise.allSettled(
+      images.map((img, i) =>
+        saveAiCreative({
+          organizationId: activeOrg.id,
+          name: img.label || `Criativo IA ${img.aspect || ""}`.trim() || `Criativo IA ${i + 1}`,
+          thumbnailUrl: img.url,
+          mediaUrl: img.url,
+          type: "image",
+          userId: user?.id ?? null,
+        }),
+      ),
+    ).then((results) => {
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      if (ok > 0) toast.success(`${ok} criativo(s) salvos na biblioteca`);
+    });
+  };
 
   const active = threads.find((t) => t.id === activeId) ?? threads[0];
 
@@ -359,6 +383,7 @@ export default function AgentPage() {
           modelUsed: hasVideo ? videoModel : hasImages ? imageModel : m.modelUsed,
         };
       });
+      if (data?.images?.length) persistAiImages(data.images);
     } catch (err: any) {
       updateMessage(threadId, messageId, (m) => ({
         ...m,
@@ -417,6 +442,7 @@ export default function AgentPage() {
         videoStartedAt: data?.videoJob ? new Date().toISOString() : m.videoStartedAt,
         modelUsed: data?.videoJob || data?.videoUrl ? videoModel : mediaRequest || data?.images?.length ? imageModel : textModel,
       }));
+      if (data?.images?.length) persistAiImages(data.images);
 
       if (mediaRequest) {
         void startMediaJob({ threadId, messageId, request: mediaRequest, attachmentUrls, brandOn });
@@ -634,6 +660,7 @@ export default function AgentPage() {
         messages: [...t.messages, replyMsg],
         updatedAt: new Date().toISOString(),
       }));
+      if (data?.images?.length) persistAiImages(data.images);
       if (mediaRequest) {
         void startMediaJob({
           threadId: active.id,
@@ -674,7 +701,7 @@ export default function AgentPage() {
       toast.success("Criativo enviado para nova campanha");
       navigate("/campanhas/nova");
     } else {
-      const c = mockCampaigns.find((x) => x.id === target);
+      const c = campaignOptions.find((x) => x.id === target);
       toast.success(`Criativo anexado a "${c?.name ?? target}"`);
       navigate(`/campanhas/${target}`);
     }
@@ -773,7 +800,12 @@ export default function AgentPage() {
           <ScrollArea className="flex-1">
             <div className="mx-auto max-w-3xl space-y-6 p-6">
               {active?.messages.map((m) => (
-                <MessageBubble key={m.id} message={m} onUseInCampaign={useInCampaign} />
+                <MessageBubble
+                  key={m.id}
+                  message={m}
+                  onUseInCampaign={useInCampaign}
+                  campaigns={campaignOptions}
+                />
               ))}
               {loading && (
                 <WorkingIndicator
@@ -1088,9 +1120,11 @@ function WorkingIndicator({
 function MessageBubble({
   message,
   onUseInCampaign,
+  campaigns,
 }: {
   message: AgentMessage;
   onUseInCampaign: (url: string, target: "new" | string) => void;
+  campaigns: { id: string; name: string }[];
 }) {
   const isUser = message.role === "user";
   return (
@@ -1152,14 +1186,20 @@ function MessageBubble({
 
         {/* Legacy single image */}
         {message.imageUrl && !message.images?.length && (
-          <ImageResult url={message.imageUrl} label="Criativo" onUseInCampaign={onUseInCampaign} />
+          <ImageResult url={message.imageUrl} label="Criativo" onUseInCampaign={onUseInCampaign} campaigns={campaigns} />
         )}
 
         {/* Image pair */}
         {message.images && message.images.length > 0 && (
           <div className="grid gap-2 sm:grid-cols-2">
             {message.images.map((img, i) => (
-              <ImageResult key={i} url={img.url} label={img.label ?? img.format} onUseInCampaign={onUseInCampaign} />
+              <ImageResult
+                key={i}
+                url={img.url}
+                label={img.label ?? img.format}
+                onUseInCampaign={onUseInCampaign}
+                campaigns={campaigns}
+              />
             ))}
           </div>
         )}
@@ -1201,10 +1241,12 @@ function ImageResult({
   url,
   label,
   onUseInCampaign,
+  campaigns,
 }: {
   url: string;
   label: string;
   onUseInCampaign: (url: string, target: "new" | string) => void;
+  campaigns: { id: string; name: string }[];
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card">
@@ -1234,13 +1276,19 @@ function ImageResult({
             <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground">
               Anexar a existente
             </DropdownMenuLabel>
-            {mockCampaigns.slice(0, 6).map((c) => (
-              <DropdownMenuItem key={c.id} onClick={() => onUseInCampaign(url, c.id)} className="gap-2 text-xs">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                <span className="truncate">{c.name}</span>
-                <span className="ml-auto text-[10px] uppercase text-muted-foreground">{c.platform}</span>
-              </DropdownMenuItem>
-            ))}
+            {campaigns.length === 0 ? (
+              <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
+                Nenhuma campanha ativa na Meta
+              </div>
+            ) : (
+              campaigns.slice(0, 6).map((c) => (
+                <DropdownMenuItem key={c.id} onClick={() => onUseInCampaign(url, c.id)} className="gap-2 text-xs">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                  <span className="truncate">{c.name}</span>
+                  <span className="ml-auto text-[10px] uppercase text-muted-foreground">meta</span>
+                </DropdownMenuItem>
+              ))
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

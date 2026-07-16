@@ -48,6 +48,20 @@ export const metaKeys = {
       period?.from ?? null,
       period?.to ?? null,
     ] as const,
+  creatives: (
+    orgId: string | null,
+    adAccountId: string | null,
+    filters?: { from?: string; to?: string; inUse?: string },
+  ) =>
+    [
+      "meta",
+      "creatives",
+      orgId,
+      adAccountId,
+      filters?.from ?? null,
+      filters?.to ?? null,
+      filters?.inUse ?? null,
+    ] as const,
 };
 
 /** Invalidate every meta query for an organization. */
@@ -59,5 +73,6 @@ export function metaInvalidationKeys(orgId: string | null) {
     ["meta", "campaigns", orgId],
     ["meta", "insights", orgId],
     ["meta", "hierarchy", orgId],
+    ["meta", "creatives", orgId],
   ] as const;
 }

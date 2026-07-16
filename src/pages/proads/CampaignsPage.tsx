@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, Search, Sparkles, MoreHorizontal, ExternalLink, RefreshCw, SlidersHorizontal, ArrowUpDown } from "lucide-react";
@@ -14,15 +14,12 @@ import {
   DropdownMenuLabel, DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { campaignService } from "@/services";
 import {
   formatCurrency, formatDateTime, formatFreq, formatMetaCurrency, formatMetaNumber,
   formatMetaPercent, formatNumber, formatRoas,
 } from "@/lib/format";
 import { periodRange } from "@/lib/dates";
-import type { Campaign } from "@/types/proads";
 import { toast } from "sonner";
-import { useDemoMode } from "@/contexts/DemoModeContext";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { useMetaCampaigns, type MetaCampaignRow } from "@/hooks/useMetaData";
 import { metaKeys } from "@/lib/metaKeys";
@@ -77,7 +74,6 @@ function budgetLabel(c: Row) {
 export default function CampaignsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { demoMode } = useDemoMode();
   const meta = useMetaIntegration();
   const [status, setStatus] = useState<string>("all");
   const [objective, setObjective] = useState<string>("all");
@@ -88,7 +84,6 @@ export default function CampaignsPage() {
   const [cols, setCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS));
   const [sortKey, setSortKey] = useState<SortKey>("spend");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [mockItems, setMockItems] = useState<Campaign[]>([]);
 
   const tz = meta.selectedAdAccount?.timezone || "America/Sao_Paulo";
   const { dateFrom, dateTo } = useMemo(
@@ -104,23 +99,10 @@ export default function CampaignsPage() {
     dateTo,
   });
 
-  useEffect(() => { if (!useReal) campaignService.list().then(setMockItems); }, [useReal]);
-
   const items: Row[] = useMemo(() => {
-    if (useReal) return (camps.data?.campaigns ?? []) as Row[];
-    if (!demoMode) return [];
-    return mockItems.map((c) => ({
-      id: c.id, name: c.name, platform: "meta" as const, objective: c.objective,
-      status: c.status as any, effective_status: c.status,
-      budgetLevel: "campaign" as const,
-      dailyBudget: c.dailyBudget, lifetimeBudget: null, budgetRemaining: null,
-      spend: c.spend, impressions: 0, reach: 0, clicks: 0, link_clicks: 0,
-      ctr: null, cpc: null, cpm: null, frequency: null,
-      leads: c.leads, conversions: 0, revenue: 0, results: c.leads, result_type: "lead",
-      cpl: c.cpl, cpr: c.cpl, roas: c.roas, startTime: null, stopTime: null,
-      createdAt: c.updatedAt, updatedAt: c.updatedAt, createdByAI: c.createdByAI,
-    }));
-  }, [useReal, camps.data, demoMode, mockItems]);
+    if (!useReal) return [];
+    return (camps.data?.campaigns ?? []) as Row[];
+  }, [useReal, camps.data]);
 
   const filtered = useMemo(() => {
     const list = items.filter((c) => {
@@ -219,10 +201,16 @@ export default function CampaignsPage() {
       />
 
       <div className="space-y-4 p-4 md:p-8">
-        {!useReal && !demoMode && (
+        {!useReal && (
           <Card className="border-warning/40 bg-warning-soft/40 p-4 shadow-card">
-            <p className="text-sm font-semibold">Conta Meta não conectada</p>
-            <p className="text-xs text-muted-foreground">Conecte a Meta em Integrações para ver campanhas reais.</p>
+            <p className="text-sm font-semibold">
+              {meta.connected ? "Selecione uma conta de anúncio" : "Conta Meta não conectada"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {meta.connected
+                ? "Escolha uma conta de anúncio em Integrações para listar campanhas reais."
+                : "Conecte a Meta em Integrações para ver campanhas reais."}
+            </p>
             <Button size="sm" className="mt-2" onClick={() => navigate("/integracoes")}>Ir para Integrações</Button>
           </Card>
         )}
@@ -342,7 +330,11 @@ export default function CampaignsPage() {
               <div className="p-10 text-center text-xs text-muted-foreground">Carregando campanhas da Meta…</div>
             ) : filtered.length === 0 ? (
               <div className="p-10 text-center text-xs text-muted-foreground">
-                {useReal ? "Nenhuma campanha encontrada nesta conta." : "Sem campanhas para exibir."}
+                {useReal
+                  ? "Nenhuma campanha encontrada nesta conta."
+                  : meta.connected
+                    ? "Selecione uma conta em Integrações."
+                    : "Conecte a Meta para listar campanhas."}
               </div>
             ) : (
               <Table>

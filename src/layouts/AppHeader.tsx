@@ -1,9 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import { Bell, Building2, Check, Command, Plus, Search, Sparkles } from "lucide-react";
+import { Bell, Building2, Check, Command, Plus, Search } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,19 +11,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { notifications } from "@/mocks/data";
-import { useDemoMode } from "@/contexts/DemoModeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { toast } from "sonner";
 
 export function AppHeader() {
   const navigate = useNavigate();
-  const { demoMode, setDemoMode } = useDemoMode();
   const { user, signOut } = useAuth();
   const { organizations, activeOrg, setActiveOrg } = useOrganization();
 
-  const unread = demoMode ? notifications.filter((n) => !n.read).length : 0;
   const displayName =
     (user?.user_metadata?.full_name as string | undefined) ??
     (user?.user_metadata?.name as string | undefined) ??
@@ -56,20 +50,6 @@ export function AppHeader() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        <div className="hidden items-center gap-2 rounded-full border border-border bg-secondary/60 px-3 py-1.5 md:flex">
-          <Sparkles className={`h-3.5 w-3.5 ${demoMode ? "text-accent" : "text-muted-foreground"}`} />
-          <Label htmlFor="demo-mode" className="cursor-pointer text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {demoMode ? "Modo demo" : "Modo clean"}
-          </Label>
-          <Switch
-            id="demo-mode"
-            checked={demoMode}
-            onCheckedChange={(v) => {
-              setDemoMode(v);
-              toast.success(v ? "Modo demo ativado" : "Modo clean ativado");
-            }}
-          />
-        </div>
         {activeOrg && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -99,30 +79,16 @@ export function AppHeader() {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
               <Bell className="h-[18px] w-[18px]" />
-              {unread > 0 && (
-                <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground">
-                  {unread}
-                </span>
-              )}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80">
             <DropdownMenuLabel className="flex items-center justify-between">
-              Notificações <span className="text-xs text-muted-foreground">{unread} novas</span>
+              Notificações
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {demoMode ? (
-              notifications.map((n) => (
-                <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-0.5 py-2.5">
-                  <span className="text-sm font-medium">{n.title}</span>
-                  <span className="text-xs text-muted-foreground">{n.description}</span>
-                </DropdownMenuItem>
-              ))
-            ) : (
-              <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-                Nenhuma notificação
-              </div>
-            )}
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+              Nenhuma notificação
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -176,4 +142,3 @@ export function AppHeader() {
     </header>
   );
 }
-

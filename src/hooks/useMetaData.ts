@@ -305,3 +305,121 @@ export function useMetaCampaignDetail(
     placeholderData: (prev) => prev,
   });
 }
+
+export type LibraryCreative = {
+  id: string;
+  db_id: string | null;
+  source: "meta" | "ai" | "upload";
+  meta_creative_id: string | null;
+  name: string;
+  type: string;
+  object_type: string | null;
+  status: string;
+  thumbnail_url: string | null;
+  media_url: string | null;
+  headline: string | null;
+  primary_text: string | null;
+  cta: string | null;
+  format: string | null;
+  created_by_ai: boolean;
+  in_use: boolean;
+  ads_count: number;
+  active_ads_count: number;
+  ad_names?: string[];
+  campaign_ids?: string[];
+  performance: {
+    spend: number;
+    impressions: number;
+    reach: number;
+    clicks: number;
+    ctr: number | null;
+    cpc: number | null;
+    cpm: number | null;
+    frequency: number | null;
+    leads: number;
+    cpl: number | null;
+    conversions: number;
+    results: number;
+    cpr: number | null;
+    revenue: number;
+    roas: number | null;
+  };
+  created_at: string | null;
+  updated_at: string | null;
+  last_synced_at: string | null;
+};
+
+export function useMetaCreatives(opts?: {
+  dateFrom?: string;
+  dateTo?: string;
+  inUse?: "all" | "true" | "false";
+  sync?: boolean;
+}) {
+  const { organizationId, selectedAdAccount, connected } = useMetaIntegration();
+  const params: Record<string, string> = { organization_id: organizationId ?? "" };
+  if (opts?.dateFrom) params.date_from = opts.dateFrom;
+  if (opts?.dateTo) params.date_to = opts.dateTo;
+  if (opts?.inUse && opts.inUse !== "all") params.in_use = opts.inUse;
+  if (opts?.sync) params.sync = "1";
+
+  return useQuery({
+    queryKey: metaKeys.creatives(organizationId, selectedAdAccount?.id ?? null, {
+      from: opts?.dateFrom,
+      to: opts?.dateTo,
+      inUse: opts?.inUse,
+    }),
+    queryFn: async () => {
+      const j = await fetchJson("meta-creatives", params);
+      return j as {
+        creatives: LibraryCreative[];
+        counts?: { total: number; meta: number; ai: number; upload: number; in_use: number };
+        period?: { date_from: string; date_to: string; label: string };
+        warnings: string[];
+        request_id?: string;
+        data_source?: string;
+      };
+    },
+    // Needs org; Meta optional (AI/upload rows still returned)
+    enabled: !!organizationId,
+    staleTime: 90_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** Persist an AI-generated creative into the shared library (alongside Meta). */
+export async function saveAiCreative(input: {
+  organizationId: string;
+  name: string;
+  thumbnailUrl?: string | null;
+  mediaUrl?: string | null;
+  type?: string;
+  headline?: string | null;
+  primaryText?: string | null;
+  cta?: string | null;
+  userId?: string | null;
+}) {
+  const { data, error } = await supabase
+    .from("creatives" as any)
+    .insert({
+      organization_id: input.organizationId,
+      source: "ai",
+      name: input.name,
+      type: input.type ?? "image",
+      format: input.type ?? "image",
+      thumbnail_url: input.thumbnailUrl ?? input.mediaUrl ?? null,
+      media_url: input.mediaUrl ?? input.thumbnailUrl ?? null,
+      headline: input.headline ?? null,
+      primary_text: input.primaryText ?? null,
+      cta: input.cta ?? null,
+      created_by_ai: true,
+      created_by_user_id: input.userId ?? null,
+      status: "draft",
+      in_use: false,
+      performance: {},
+      meta_payload: {},
+    } as any)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}

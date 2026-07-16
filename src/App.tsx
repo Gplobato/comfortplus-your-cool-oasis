@@ -3,7 +3,6 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { DemoModeProvider } from "./contexts/DemoModeContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import { OrganizationProvider } from "./contexts/OrganizationContext";
 import { MetaIntegrationProvider } from "./contexts/MetaIntegrationContext";
@@ -40,7 +39,6 @@ const App = () => (
       <AuthProvider>
         <OrganizationProvider>
           <MetaIntegrationProvider>
-          <DemoModeProvider>
             <TooltipProvider>
               <Toaster />
               <Sonner position="top-right" richColors />
@@ -79,7 +77,6 @@ const App = () => (
                 </Route>
               </Routes>
             </TooltipProvider>
-          </DemoModeProvider>
           </MetaIntegrationProvider>
         </OrganizationProvider>
       </AuthProvider>

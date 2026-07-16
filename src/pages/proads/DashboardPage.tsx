@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Users2, DollarSign, TrendingUp, Target, MousePointerClick,
-  RefreshCw, Sparkles, ArrowRight, Check, X, MessageSquare, BarChart3, RotateCw,
+  RefreshCw, Sparkles, ArrowRight, MessageSquare, BarChart3, RotateCw,
   Eye, Percent, Activity, CircleDollarSign,
 } from "lucide-react";
 import {
@@ -21,13 +21,11 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { approvals, creatives, recommendations } from "@/mocks/data";
 import {
   formatCurrency, formatDate, formatDateTime, formatFreq, formatMetaCurrency,
   formatMetaNumber, formatMetaPercent, formatNumber, formatRoas,
 } from "@/lib/format";
 import { periodRange } from "@/lib/dates";
-import { useDemoMode } from "@/contexts/DemoModeContext";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { useMetaDashboard, useMetaCampaigns } from "@/hooks/useMetaData";
 import { EmptyState } from "@/components/proads/EmptyState";
@@ -40,7 +38,6 @@ const PERIOD_DAYS: Record<string, number> = { "7d": 7, "14d": 14, "30d": 30, tod
 export default function DashboardPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { demoMode } = useDemoMode();
   const meta = useMetaIntegration();
   const [periodKey, setPeriodKey] = useState<"today" | "7d" | "14d" | "30d">("14d");
   const [chartMode, setChartMode] = useState<"leads" | "spend">("spend");
@@ -63,25 +60,6 @@ export default function DashboardPage() {
     return [...list].sort((a, b) => b.spend - a.spend);
   }, [camps.data?.campaigns]);
 
-  const demoSeries = useMemo(() => {
-    const days = PERIOD_DAYS[periodKey] ?? 14;
-    return Array.from({ length: days }).map((_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (days - 1 - i));
-      return {
-        date: d.toISOString().slice(0, 10),
-        leads: 40 + Math.round(Math.sin(i / 2) * 12) + i,
-        cpl: 14 - (i % 4),
-        spend: 500 + i * 12,
-        cpm: 18 + (i % 5),
-      };
-    });
-  }, [periodKey]);
-
-  const displayApprovals = demoMode ? approvals : [];
-  const displayCreatives = demoMode ? creatives : [];
-  const displayRecommendations = demoMode ? recommendations : [];
-
   const metaChip = (() => {
     if (meta.loading) return { label: "Meta • Carregando…", color: "bg-muted-foreground" };
     if (!meta.connected) return { label: "Meta • Não conectada", color: "bg-muted-foreground" };
@@ -96,7 +74,7 @@ export default function DashboardPage() {
       );
       toast.success("Dados atualizados");
     } else {
-      toast.success("Modo demo");
+      toast.info("Conecte a Meta para atualizar métricas");
     }
   };
 
@@ -190,14 +168,15 @@ export default function DashboardPage() {
       />
 
       <div className="space-y-6 p-4 md:p-8">
-        {!useReal && demoMode && (
-          <Card className="flex items-center gap-2 border-accent/40 bg-accent/5 p-3 shadow-card">
-            <Badge variant="outline" className="border-accent/40 bg-accent/10 text-accent">
-              Dados demonstrativos
-            </Badge>
-            <p className="text-xs text-muted-foreground">
-              Modo demo ativo. Conecte a Meta em Integrações para ver números reais.
-            </p>
+        {!meta.connected && (
+          <Card className="flex items-center justify-between border-border bg-card p-4 shadow-card">
+            <div>
+              <p className="text-sm font-semibold">Conecte sua conta Meta</p>
+              <p className="text-xs text-muted-foreground">
+                Integre a Meta Ads para ver métricas e campanhas reais neste painel.
+              </p>
+            </div>
+            <Button size="sm" onClick={() => navigate("/integracoes")}>Ir para Integrações</Button>
           </Card>
         )}
 
@@ -237,15 +216,6 @@ export default function DashboardPage() {
               <MetricCard label="CTR" value={formatMetaPercent(summary.ctr)} delta={delta("ctr")} icon={Percent} tone="success" />
               <MetricCard label="CPC" value={formatMetaCurrency(summary.cpc)} icon={CircleDollarSign} tone="warning" />
             </>
-          ) : demoMode ? (
-            <>
-              <MetricCard label="Investimento" value="R$ 15.562" delta={14.2} icon={DollarSign} tone="brand" />
-              <MetricCard label="Impressões" value="482.100" delta={8.1} icon={Eye} tone="accent" />
-              <MetricCard label="Alcance" value="291.400" icon={Users2} tone="accent" />
-              <MetricCard label="Cliques" value="12.840" delta={6.4} icon={MousePointerClick} tone="brand" />
-              <MetricCard label="CTR" value="2,66%" delta={1.2} icon={Percent} tone="success" />
-              <MetricCard label="CPC" value="R$ 1,21" icon={CircleDollarSign} tone="warning" />
-            </>
           ) : (
             Array.from({ length: 6 }).map((_, i) => (
               <MetricCard key={i} label="—" value="—" icon={Activity} />
@@ -270,15 +240,6 @@ export default function DashboardPage() {
                 deltaLabel={summary.result_type && summary.result_type !== "unknown" ? `por ${summary.result_type}` : undefined}
               />
               <MetricCard label="ROAS" value={formatRoas(summary.roas)} delta={delta("roas")} icon={TrendingUp} tone="success" />
-            </>
-          ) : demoMode ? (
-            <>
-              <MetricCard label="CPM" value="R$ 32,30" delta={-3.1} icon={TrendingUp} tone="brand" />
-              <MetricCard label="Frequência" value="1,65" icon={Activity} tone="accent" />
-              <MetricCard label="Leads" value="1.250" delta={18.7} icon={Users2} tone="brand" />
-              <MetricCard label="CPL" value="R$ 12,45" delta={-8.3} icon={Target} tone="accent" />
-              <MetricCard label="CPR" value="R$ 12,45" delta={-8.3} icon={Target} tone="warning" />
-              <MetricCard label="ROAS" value="4,32x" delta={22.1} icon={TrendingUp} tone="success" />
             </>
           ) : (
             Array.from({ length: 6 }).map((_, i) => (
@@ -321,7 +282,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-muted-foreground">
                   {useReal
                     ? `${dash.data?.period.label ?? ""} · ${meta.selectedAdAccount?.name ?? ""}`
-                    : "Série diária"}
+                    : "Conecte a Meta para ver a série diária"}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -374,18 +335,6 @@ export default function DashboardPage() {
                     <EmptyState icon={BarChart3} title="Sem dados no período" description="Nenhuma métrica retornada pela Meta para esta janela." />
                   </div>
                 )
-              ) : demoMode ? (
-                <ResponsiveContainer>
-                  <ComposedChart data={demoSeries}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                    <XAxis dataKey="date" tickFormatter={formatDate} stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis yAxisId="left" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }} />
-                    <Area yAxisId="left" type="monotone" dataKey="spend" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
-                    <Line yAxisId="right" type="monotone" dataKey="cpm" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
-                  </ComposedChart>
-                </ResponsiveContainer>
               ) : (
                 <div className="flex h-full items-center justify-center">
                   <EmptyState
@@ -431,13 +380,6 @@ export default function DashboardPage() {
                     </p>
                   </div>
                 </div>
-              ) : demoMode ? (
-                <div className="rounded-lg bg-gradient-brand-soft p-3">
-                  <p className="text-xs font-semibold text-primary">Diretor de Marketing</p>
-                  <p className="mt-1 text-sm">
-                    Identifiquei <strong>3 campanhas</strong> com CPL acima da meta.
-                  </p>
-                </div>
               ) : (
                 <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">
                   Conecte a Meta para ativar análises automáticas.
@@ -453,168 +395,70 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Approvals + Recommendations (demo only) */}
-        {(demoMode || displayApprovals.length > 0) && (
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Card className="shadow-card lg:col-span-2">
-              <div className="flex items-center justify-between border-b border-border p-4">
-                <div>
-                  <h3 className="font-display font-bold">Aprovações pendentes</h3>
-                  <p className="text-xs text-muted-foreground">{displayApprovals.length} itens aguardando decisão</p>
-                </div>
-                <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/aprovacoes")}>
-                  Ver todas <ArrowRight className="ml-1 h-3 w-3" />
-                </Button>
-              </div>
-              <div className="divide-y divide-border">
-                {displayApprovals.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-muted-foreground">Nenhuma aprovação pendente.</div>
-                ) : (
-                  displayApprovals.slice(0, 4).map((a) => (
-                    <div key={a.id} className="flex items-center gap-3 p-4">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-brand-soft">
-                        <Sparkles className="h-4 w-4 text-accent" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">{a.title}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {a.requestedBy} · {formatDate(a.createdAt)} · <span className="font-medium text-foreground">confiança {Math.round(a.confidence * 100)}%</span>
-                        </p>
-                      </div>
-                      <Badge variant="outline" className={a.urgency === "high" ? "border-destructive/30 bg-destructive/10 text-destructive" : a.urgency === "medium" ? "border-warning/30 bg-warning-soft text-warning" : "border-border bg-muted"}>
-                        {a.urgency === "high" ? "Alta" : a.urgency === "medium" ? "Média" : "Baixa"}
-                      </Badge>
-                      <div className="hidden gap-1 md:flex">
-                        <Button size="sm" variant="ghost" className="h-8 gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => toast.error("Rejeitado")}>
-                          <X className="h-3.5 w-3.5" /> Rejeitar
-                        </Button>
-                        <Button size="sm" className="h-8 gap-1 bg-gradient-brand text-primary-foreground" onClick={() => toast.success("Aprovado")}>
-                          <Check className="h-3.5 w-3.5" /> Aprovar
-                        </Button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </Card>
-
-            <Card className="shadow-card">
-              <div className="flex items-center justify-between border-b border-border p-4">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-accent" />
-                  <h3 className="font-display font-bold">Sugestões da IA</h3>
-                </div>
-              </div>
-              <div className="divide-y divide-border">
-                {displayRecommendations.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-muted-foreground">Sem sugestões no momento.</div>
-                ) : (
-                  displayRecommendations.map((r) => (
-                    <div key={r.id} className="p-4">
-                      <p className="text-sm font-semibold">{r.title}</p>
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{r.explanation}</p>
-                      <div className="mt-2 flex items-center justify-between">
-                        <Badge variant="outline" className="bg-success-soft text-success">{r.impact}</Badge>
-                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => toast.success("Sugestão aplicada")}>Aplicar sugestão</Button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </Card>
+        {/* Active Campaigns */}
+        <Card className="shadow-card">
+          <div className="flex items-center justify-between border-b border-border p-4">
+            <div>
+              <h3 className="font-display font-bold">Campanhas ativas</h3>
+              {useReal && meta.lastSyncAt && (
+                <p className="text-[11px] text-muted-foreground">Última sinc: {formatDateTime(meta.lastSyncAt)}</p>
+              )}
+            </div>
+            <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/campanhas")}>
+              Ver todas <ArrowRight className="ml-1 h-3 w-3" />
+            </Button>
           </div>
-        )}
-
-        {/* Creatives (demo) + Active Campaigns */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          {demoMode && (
-            <Card className="shadow-card lg:col-span-1">
-              <div className="flex items-center justify-between border-b border-border p-4">
-                <h3 className="font-display font-bold">Criativos recentes</h3>
-                <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/criativos")}>Ver todos</Button>
-              </div>
-              {displayCreatives.length === 0 ? (
-                <div className="p-8 text-center text-xs text-muted-foreground">Nenhum criativo cadastrado.</div>
+          <div className="overflow-x-auto">
+            {useReal ? (
+              camps.isLoading && !activeCampaigns.length ? (
+                <div className="p-8 text-center text-xs text-muted-foreground">Carregando…</div>
+              ) : activeCampaigns.length === 0 ? (
+                <div className="p-8 text-center text-xs text-muted-foreground">Nenhuma campanha ativa nesta conta.</div>
               ) : (
-                <div className="grid grid-cols-2 gap-3 p-4">
-                  {displayCreatives.slice(0, 4).map((c) => (
-                    <div key={c.id} className="group cursor-pointer" onClick={() => navigate(`/criativos/${c.id}`)}>
-                      <div className="aspect-square overflow-hidden rounded-lg bg-muted">
-                        <img src={c.thumbnailUrl} alt={c.name} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
-                      </div>
-                      <p className="mt-1.5 truncate text-xs font-semibold">{c.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{c.format}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          )}
-
-          <Card className={`shadow-card ${demoMode ? "lg:col-span-2" : "lg:col-span-3"}`}>
-            <div className="flex items-center justify-between border-b border-border p-4">
-              <div>
-                <h3 className="font-display font-bold">Campanhas ativas</h3>
-                {useReal && meta.lastSyncAt && (
-                  <p className="text-[11px] text-muted-foreground">Última sinc: {formatDateTime(meta.lastSyncAt)}</p>
-                )}
-              </div>
-              <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/campanhas")}>
-                Ver todas <ArrowRight className="ml-1 h-3 w-3" />
-              </Button>
-            </div>
-            <div className="overflow-x-auto">
-              {useReal ? (
-                camps.isLoading && !activeCampaigns.length ? (
-                  <div className="p-8 text-center text-xs text-muted-foreground">Carregando…</div>
-                ) : activeCampaigns.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-muted-foreground">Nenhuma campanha ativa nesta conta.</div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-border hover:bg-transparent">
-                        <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Campanha</TableHead>
-                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">Invest.</TableHead>
-                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CPM</TableHead>
-                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CTR</TableHead>
-                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">Leads</TableHead>
-                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CPL</TableHead>
-                        <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CPR</TableHead>
-                        <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {activeCampaigns.slice(0, 8).map((c) => (
-                        <TableRow key={c.id} className="cursor-pointer border-border" onClick={() => navigate(`/campanhas/${c.id}`)}>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <PlatformBadge platform="meta" showLabel={false} />
-                              <div className="min-w-0">
-                                <span className="block truncate text-sm font-medium">{c.name}</span>
-                                <span className="text-[10px] capitalize text-muted-foreground">{c.objective || "—"}</span>
-                              </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border hover:bg-transparent">
+                      <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Campanha</TableHead>
+                      <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">Invest.</TableHead>
+                      <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CPM</TableHead>
+                      <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CTR</TableHead>
+                      <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">Leads</TableHead>
+                      <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CPL</TableHead>
+                      <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CPR</TableHead>
+                      <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {activeCampaigns.slice(0, 8).map((c) => (
+                      <TableRow key={c.id} className="cursor-pointer border-border" onClick={() => navigate(`/campanhas/${c.id}`)}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <PlatformBadge platform="meta" showLabel={false} />
+                            <div className="min-w-0">
+                              <span className="block truncate text-sm font-medium">{c.name}</span>
+                              <span className="text-[10px] capitalize text-muted-foreground">{c.objective || "—"}</span>
                             </div>
-                          </TableCell>
-                          <TableCell className="text-right text-sm font-semibold">{formatCurrency(c.spend)}</TableCell>
-                          <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpm)}</TableCell>
-                          <TableCell className="text-right text-sm">{formatMetaPercent(c.ctr)}</TableCell>
-                          <TableCell className="text-right text-sm">{formatMetaNumber(c.leads)}</TableCell>
-                          <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpl)}</TableCell>
-                          <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpr)}</TableCell>
-                          <TableCell><CampaignStatusBadge status={c.status} /></TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )
-              ) : (
-                <div className="p-8 text-center text-xs text-muted-foreground">
-                  {meta.connected ? "Selecione uma conta em Integrações." : "Nenhuma campanha ativa."}
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-semibold">{formatCurrency(c.spend)}</TableCell>
+                        <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpm)}</TableCell>
+                        <TableCell className="text-right text-sm">{formatMetaPercent(c.ctr)}</TableCell>
+                        <TableCell className="text-right text-sm">{formatMetaNumber(c.leads)}</TableCell>
+                        <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpl)}</TableCell>
+                        <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpr)}</TableCell>
+                        <TableCell><CampaignStatusBadge status={c.status} /></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )
+            ) : (
+              <div className="p-8 text-center text-xs text-muted-foreground">
+                {meta.connected ? "Selecione uma conta em Integrações." : "Conecte a Meta para listar campanhas ativas."}
+              </div>
+            )}
+          </div>
+        </Card>
       </div>
     </>
   );

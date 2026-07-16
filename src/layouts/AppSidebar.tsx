@@ -26,9 +26,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import { useDemoMode } from "@/contexts/DemoModeContext";
-
-
 
 const nav = [
   { title: "Visão Geral", url: "/dashboard", icon: LayoutDashboard },
@@ -36,7 +33,7 @@ const nav = [
   { title: "Criativos", url: "/criativos", icon: Images },
   { title: "Agente IA", url: "/agente", icon: Sparkles },
   { title: "Públicos", url: "/publicos", icon: Users },
-  { title: "Aprovações", url: "/aprovacoes", icon: CheckCheck, badge: 4 },
+  { title: "Aprovações", url: "/aprovacoes", icon: CheckCheck },
   { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
   { title: "Integrações", url: "/integracoes", icon: Plug },
   { title: "Histórico", url: "/historico", icon: History },
@@ -46,7 +43,6 @@ const nav = [
 export function AppSidebar() {
   const { pathname } = useLocation();
   const { state } = useSidebar();
-  const { demoMode } = useDemoMode();
   const collapsed = state === "collapsed";
 
   return (
@@ -99,14 +95,7 @@ export function AppSidebar() {
                           className={cn("h-[18px] w-[18px] shrink-0", active && "text-primary")}
                         />
                         {!collapsed && (
-                          <>
-                            <span className="flex-1 truncate text-sm">{item.title}</span>
-                            {demoMode && item.badge && (
-                              <span className="ml-auto rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
-                                {item.badge}
-                              </span>
-                            )}
-                          </>
+                          <span className="flex-1 truncate text-sm">{item.title}</span>
                         )}
                       </NavLink>
                     </SidebarMenuButton>
@@ -134,8 +123,6 @@ export function AppSidebar() {
           )}
         </a>
       </SidebarFooter>
-
-
     </Sidebar>
   );
 }
