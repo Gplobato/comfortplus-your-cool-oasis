@@ -58,36 +58,17 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
 
   const createOrganization = async (name: string): Promise<Organization> => {
     if (!user) throw new Error("Não autenticado");
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || `org-${Date.now()}`;
-    const { data: org, error } = await supabase
-      .from("organizations")
-      .insert({ name, slug: `${slug}-${Date.now().toString(36)}` })
-      .select("id, name, slug")
-      .single();
-    if (error || !org) throw error ?? new Error("Falha ao criar organização");
-
-    const { error: memberErr } = await supabase
-      .from("organization_members")
-      .insert({ organization_id: org.id, user_id: user.id });
-    if (memberErr) throw memberErr;
-
-    await supabase.from("user_roles").insert({
-      user_id: user.id,
-      organization_id: org.id,
-      role: "admin",
-    });
-
-    await supabase.from("audit_logs").insert({
-      organization_id: org.id,
-      user_id: user.id,
-      event_type: "organization.created",
-      sanitized_metadata: { name },
-    });
-
+    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || `org-${Date.now()}`;
+    const slug = `${base}-${Date.now().toString(36)}`;
+    const { data, error } = await supabase.rpc("create_organization", { _name: name, _slug: slug });
+    if (error) throw error;
+    const org = Array.isArray(data) ? data[0] : data;
+    if (!org) throw new Error("Falha ao criar organização");
     await refresh();
-    setActiveOrg(org);
-    return org;
+    setActiveOrg(org as Organization);
+    return org as Organization;
   };
+
 
   return (
     <OrgContext.Provider value={{ organizations, activeOrg, loading, setActiveOrg, refresh, createOrganization }}>
