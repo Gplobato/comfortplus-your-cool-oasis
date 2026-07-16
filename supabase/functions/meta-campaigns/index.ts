@@ -89,10 +89,18 @@ Deno.serve(async (req) => {
         ? `&effective_status=${encodeURIComponent(JSON.stringify([status]))}`
         : "";
     const r = await gfetch(
-      `${GRAPH}/${acct}/campaigns?fields=id,name,objective,effective_status,status,daily_budget,lifetime_budget,updated_time,created_time,start_time,stop_time` +
+      `${GRAPH}/${acct}/campaigns?fields=id,name,objective,effective_status,status,daily_budget,lifetime_budget,budget_remaining,updated_time,created_time,start_time,stop_time` +
         `&limit=${limit}${effective}&access_token=${token}`,
     );
     campaigns = r.data ?? [];
+    if (objective && objective !== "ALL") {
+      campaigns = campaigns.filter((c: any) =>
+        String(c.objective ?? "").toUpperCase().includes(objective),
+      );
+    }
+    if (search) {
+      campaigns = campaigns.filter((c: any) => String(c.name ?? "").toLowerCase().includes(search));
+    }
   } catch (e) {
     warnings.push(`campaigns: ${sanitizeMetaError(e)}`);
     logEvent("meta.campaigns.failed", {
