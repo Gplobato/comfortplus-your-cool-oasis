@@ -43,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
+import { loadAiSettings } from "@/lib/aiSettings";
 import {
   createThread,
   loadCurrentId,
@@ -144,9 +145,9 @@ export default function AgentPage() {
   });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [textModel, setTextModel] = useState("zai-org/glm-5.2");
-  const [imageModel, setImageModel] = useState("gpt-image-2");
-  const [videoModel, setVideoModel] = useState("happyhorse-1.1");
+  const [textModel, setTextModel] = useState(() => loadAiSettings().textModel);
+  const [imageModel, setImageModel] = useState(() => loadAiSettings().imageModel);
+  const [videoModel, setVideoModel] = useState(() => loadAiSettings().videoModel);
   const [forceMode, setForceMode] = useState<"auto" | "image" | "video">("auto");
   const [useBrandLogo, setUseBrandLogo] = useState(true);
   const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);

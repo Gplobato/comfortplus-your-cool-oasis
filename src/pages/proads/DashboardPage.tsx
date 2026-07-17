@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Users2, DollarSign, TrendingUp, Target, MousePointerClick,
-  RefreshCw, Sparkles, ArrowRight, MessageSquare, BarChart3, RotateCw,
+  RefreshCw, ArrowRight, BarChart3, RotateCw,
   Eye, Percent, Activity, CircleDollarSign,
 } from "lucide-react";
 import {
@@ -29,6 +29,8 @@ import { periodRange } from "@/lib/dates";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { useMetaDashboard, useMetaCampaigns } from "@/hooks/useMetaData";
 import { EmptyState } from "@/components/proads/EmptyState";
+import { TrafficManagerChat } from "@/components/proads/TrafficManagerChat";
+import { CampaignComparator } from "@/components/proads/CampaignComparator";
 import { toast } from "sonner";
 import { metaInvalidationKeys } from "@/lib/metaKeys";
 import { metaErrorMessage } from "@/lib/metaErrors";
@@ -41,6 +43,7 @@ export default function DashboardPage() {
   const meta = useMetaIntegration();
   const [periodKey, setPeriodKey] = useState<"today" | "7d" | "14d" | "30d">("14d");
   const [chartMode, setChartMode] = useState<"leads" | "spend">("spend");
+  const [compareIds, setCompareIds] = useState<string[] | undefined>(undefined);
 
   const tz = meta.selectedAdAccount?.timezone || "America/Sao_Paulo";
   const { dateFrom, dateTo } = useMemo(
@@ -347,53 +350,19 @@ export default function DashboardPage() {
             </div>
           </Card>
 
-          <Card className="flex flex-col shadow-card">
-            <div className="flex items-center justify-between border-b border-border p-4">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-brand">
-                  <Sparkles className="h-4 w-4 text-white" />
-                </div>
-                <div>
-                  <p className="font-display text-sm font-bold">Assistente ProAds</p>
-                  <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                    <span className={`h-1.5 w-1.5 rounded-full ${useReal ? "bg-success" : "bg-muted-foreground"}`} />
-                    {useReal ? "Conectado à Meta" : "Aguardando dados"}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="flex-1 space-y-3 p-4">
-              {useReal && summary ? (
-                <div className="space-y-3">
-                  <div className="rounded-lg bg-gradient-brand-soft p-3">
-                    <p className="text-xs font-semibold text-primary">Resumo do período</p>
-                    <p className="mt-1 text-sm leading-relaxed">
-                      {formatCurrency(summary.spend)} investidos · CPM {formatMetaCurrency(summary.cpm)} ·
-                      CTR {formatMetaPercent(summary.ctr)}.
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-border p-3 text-sm">
-                    <p className="text-xs font-semibold text-muted-foreground">Resultados</p>
-                    <p className="mt-1">
-                      {formatNumber(summary.leads)} leads (CPL {formatMetaCurrency(summary.cpl)}) ·
-                      CPR {formatMetaCurrency(summary.cpr)} · ROAS {formatRoas(summary.roas)}.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">
-                  Conecte a Meta para ativar análises automáticas.
-                </div>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2 border-t border-border p-3">
-              <Button size="sm" variant="outline" className="text-xs" onClick={() => navigate("/agente")}>Ver análise</Button>
-              <Button size="sm" className="ml-auto gap-1.5 bg-gradient-brand text-xs text-primary-foreground" onClick={() => navigate("/agente")}>
-                <MessageSquare className="h-3 w-3" /> Abrir chat
-              </Button>
-            </div>
-          </Card>
+          <TrafficManagerChat
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            compareCampaignIds={compareIds}
+            onConsumeCompare={() => setCompareIds(undefined)}
+          />
         </div>
+
+        <CampaignComparator
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onAskManager={(ids) => setCompareIds(ids)}
+        />
 
         {/* Active Campaigns */}
         <Card className="shadow-card">

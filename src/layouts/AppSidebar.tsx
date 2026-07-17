@@ -109,7 +109,7 @@ export function AppSidebar() {
 
       <SidebarFooter className="p-3">
         <a
-          href="https://promonitor.lovable.app"
+          href="https://promonitor.app"
           target="_blank"
           rel="noopener noreferrer"
           className={cn(

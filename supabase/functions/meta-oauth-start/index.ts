@@ -4,7 +4,14 @@ import { corsHeaders, json, requireOrgMember, requireUser } from "../_shared/met
 import { isAllowedOrigin, signState } from "../_shared/meta-crypto.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_API_VERSION") ?? "v20.0";
-const SCOPES = ["public_profile", "email", "ads_read", "business_management"].join(",");
+// ads_management enables gradual write (pause ad/adset/campaign) after human approval.
+const SCOPES = [
+  "public_profile",
+  "email",
+  "ads_read",
+  "ads_management",
+  "business_management",
+].join(",");
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });

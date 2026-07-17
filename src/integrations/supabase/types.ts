@@ -226,6 +226,53 @@ export type Database = {
           },
         ]
       }
+      traffic_manager_memories: {
+        Row: {
+          id: string
+          organization_id: string
+          user_id: string | null
+          campaign_external_id: string | null
+          campaign_name: string | null
+          role: string
+          content: string
+          sources: Json
+          proposal_ids: string[]
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          user_id?: string | null
+          campaign_external_id?: string | null
+          campaign_name?: string | null
+          role: string
+          content: string
+          sources?: Json
+          proposal_ids?: string[]
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          user_id?: string | null
+          campaign_external_id?: string | null
+          campaign_name?: string | null
+          role?: string
+          content?: string
+          sources?: Json
+          proposal_ids?: string[]
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "traffic_manager_memories_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mcp_sessions: {
         Row: {
           connection_id: string

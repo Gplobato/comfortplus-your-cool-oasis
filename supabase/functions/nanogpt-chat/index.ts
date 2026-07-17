@@ -1,6 +1,9 @@
 // NanoGPT multi-agent chat for ProAds.
 // Video generation is ASYNC: this function submits the job and returns { videoJob: { runId, model } }
 // immediately. The client polls `nanogpt-video-status` until COMPLETED.
+import { requireOrgMember, requireUser } from "../_shared/meta-auth.ts";
+import { extractProposeActions, insertProposals } from "../_shared/proposals.ts";
+import { formatSearchForPrompt, shouldWebSearch, webSearch } from "../_shared/web-search.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,7 +24,6 @@ function json(data: unknown, init: ResponseInit = {}) {
 }
 
 const SYSTEM_PROMPT = `Você é o ProAds Assistant, um time coordenado de agentes de marketing digital dentro de uma plataforma SaaS.
-Cliente ativo: **Obras Timelapse (MB Group)** — monitoramento de obras via câmeras/timelapse com IA.
 
 Papéis do time: Diretor de Marketing, Pesquisador, Estrategista, Copywriter, Roteirista, Diretor de Arte, Media Buyer, Analista.
 
@@ -37,19 +39,68 @@ Regras:
     <generate_ad_video>
     SCRIPT: [roteiro em pt-BR, curto ~15-25s, com hook, benefício, CTA]
     ||
-    VISUAL: [descrição em inglês do FRAME-CHAVE — cena, iluminação, marca Obras Timelapse visível]
+    VISUAL: [descrição em inglês do FRAME-CHAVE — cena, iluminação]
     </generate_ad_video>
   Backend gera imagem-âncora e usa como base para vídeo (image-to-video, 9:16, 5s).
 - Antes/depois das tags, explique a estratégia (público, ângulo, CTA) em bullets curtos.
 - NÃO use as tags se o usuário só quer conversar.`;
+
+const TRAFFIC_MANAGER_PROMPT = `Você é o **Gerente de Tráfego Pago** do ProAds — especialista sênior em Meta Ads / performance media buying.
+Você NÃO é o agente de criativos. NÃO gere tags <generate_image>, <generate_video> ou <generate_ad_video>.
+Se pedirem criativo visual, oriente a usar o módulo Agente IA (criativos).
+
+Seu trabalho:
+- Analisar conta e campanhas com dados reais do META_CONTEXT (summary, campaigns, selected_campaign, compare_campaigns, MEMORY).
+- Fazer análise mensal: o que performou, o que caiu, hipóteses, plano de ação, testes A/B.
+- Comparar campanhas lado a lado quando compare_campaigns estiver presente.
+- Usar WEB_SEARCH quando disponível; citar fontes por URL/número. Sem WEB_SEARCH, diga que é estimativa.
+- Sempre em português brasileiro, tom direto e acionável.
+- Estruture: Diagnóstico → Evidências → Oportunidades → Plano (7–30 dias).
+
+PROPOSTAS AUTOMÁTICAS (obrigatório quando houver ação clara e segura):
+Quando recomendar pausar anúncio/conjunto/campanha OU mudança de orçamento com IDs reais do META_CONTEXT, emita um ou mais blocos JSON:
+<propose_action>
+{"action_type":"pause_ad","tool_name":"meta.pause_ad","title":"Pausar anúncio X","explanation":"...","rationale":"...","estimated_impact":"...","proposed_arguments":{"ad_id":"123","ad_name":"..."},"current_state":{"status":"ACTIVE"},"proposed_state":{"status":"PAUSED"}}
+</propose_action>
+Tools permitidos: meta.pause_ad, meta.pause_adset, meta.pause_campaign, meta.budget_change.
+Para budget_change use proposed_arguments: {"campaign_id":"...","daily_budget":120,"currency":"BRL"} e current/proposed states.
+NÃO invente IDs — só use IDs presentes no META_CONTEXT (ads/adsets/campaigns).
+Máximo 3 propostas por resposta. Se não houver evidência, não proponha.`;
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
 }
 
-async function callText(apiKey: string, messages: ChatMessage[], model: string, extraSystem?: string) {
-  const system = extraSystem ? `${SYSTEM_PROMPT}\n\n${extraSystem}` : SYSTEM_PROMPT;
+function normalizeModelList(raw: any): { id: string; name: string; owned_by?: string }[] {
+  const arr = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.models) ? raw.models : Array.isArray(raw) ? raw : [];
+  return arr
+    .map((m: any) => {
+      if (typeof m === "string") return { id: m, name: m };
+      const id = String(m?.id ?? m?.model ?? m?.name ?? "");
+      if (!id) return null;
+      return { id, name: String(m?.name ?? id), owned_by: m?.owned_by ?? m?.provider };
+    })
+    .filter(Boolean) as { id: string; name: string; owned_by?: string }[];
+}
+
+async function fetchNanoModels(apiKey: string, path: string) {
+  const res = await fetch(`${NANO_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+  });
+  const raw = await res.text();
+  if (!res.ok) throw new Error(`${path} → ${res.status}`);
+  return normalizeModelList(JSON.parse(raw));
+}
+
+async function callText(
+  apiKey: string,
+  messages: ChatMessage[],
+  model: string,
+  extraSystem?: string,
+  basePrompt: string = SYSTEM_PROMPT,
+) {
+  const system = extraSystem ? `${basePrompt}\n\n${extraSystem}` : basePrompt;
   const res = await fetch(`${NANO_BASE}/api/v1/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -182,22 +233,47 @@ Deno.serve(async (req) => {
     if (!apiKey) throw new Error("NANOGPT_API_KEY não configurada");
 
     const body = await req.json();
+
+    // ---- List models from NanoGPT (used by AI settings) ----
+    if (body?.action === "list_models") {
+      const type = String(body?.type || "all").toLowerCase();
+      const models: Record<string, { id: string; name: string; owned_by?: string }[]> = {};
+      if (type === "text" || type === "all") {
+        models.text = await fetchNanoModels(apiKey, "/api/v1/models?detailed=true");
+      }
+      if (type === "image" || type === "all") {
+        models.image = await fetchNanoModels(apiKey, "/api/v1/image-models?detailed=true").catch(async () => {
+          const all = await fetchNanoModels(apiKey, "/api/v1/models?detailed=true");
+          return all.filter((m) => /image|flux|dall|banana|sdxl|gpt-image/i.test(m.id));
+        });
+      }
+      if (type === "video" || type === "all") {
+        models.video = await fetchNanoModels(apiKey, "/api/v1/video-models?detailed=true").catch(async () => {
+          const all = await fetchNanoModels(apiKey, "/api/v1/models?detailed=true");
+          return all.filter((m) => /video|veo|kling|runway|seedance|happyhorse|omni/i.test(m.id));
+        });
+      }
+      return json({ models, provider: "nanogpt", fetched_at: new Date().toISOString() });
+    }
+
     const messages: ChatMessage[] = Array.isArray(body?.messages) ? body.messages : [];
     const textModel: string = body?.textModel || DEFAULT_TEXT_MODEL;
     const imageModel: string = body?.imageModel || DEFAULT_IMAGE_MODEL;
     const videoModel: string = body?.videoModel || DEFAULT_VIDEO_MODEL;
     const mode: "auto" | "image" | "video" | "ad_video" = body?.mode || "auto";
+    const role: string = body?.role || body?.metaContext?.role || "creative_suite";
+    const isTrafficManager = role === "traffic_manager";
     const deferMedia: boolean = !!body?.deferMedia;
     const useBrandLogo: boolean = !!body?.useBrandLogo;
     const attachments: string[] = Array.isArray(body?.attachments) ? body.attachments : [];
     const metaContext = body?.metaContext ?? null;
 
     const contextBits: string[] = [];
-    if (useBrandLogo)
+    if (useBrandLogo && !isTrafficManager)
       contextBits.push(
-        "The user attached the OBRAS TIMELAPSE / MB GROUP brand logo — always feature it prominently in every generated visual.",
+        "The user attached a brand logo — feature it prominently in every generated visual when creating creatives.",
       );
-    if (attachments.length)
+    if (attachments.length && !isTrafficManager)
       contextBits.push(`The user attached ${attachments.length} reference image(s). Match their style, subject and framing.`);
     if (metaContext) {
       const s = metaContext.summary
@@ -205,13 +281,167 @@ Deno.serve(async (req) => {
             .map(([k, v]) => `${k}=${v === null ? "n/d" : v}`)
             .join(", ")
         : "sem dados";
+      const camps = Array.isArray(metaContext.campaigns)
+        ? metaContext.campaigns
+            .slice(0, 20)
+            .map((c: any) => `${c.name}|spend=${c.spend}|leads=${c.leads}|cpl=${c.cpl ?? "n/d"}|cpm=${c.cpm ?? "n/d"}|ctr=${c.ctr ?? "n/d"}|status=${c.status}`)
+            .join(" || ")
+        : "";
+      const sel = metaContext.selected_campaign
+        ? JSON.stringify(metaContext.selected_campaign).slice(0, 4000)
+        : "nenhuma";
       contextBits.push(
-        `META_CONTEXT (dados reais da Marketing API — NÃO invente números): connected=${metaContext.connected}, account=${metaContext.ad_account_name ?? "n/a"} (${metaContext.ad_account_id ?? "n/a"}), currency=${metaContext.currency ?? "n/a"}, period=${metaContext.period ? `${metaContext.period.from}..${metaContext.period.to}` : "n/a"}, summary=[${s}]. ${metaContext.guidance ?? ""} Se uma métrica for null/n/d, diga que está indisponível.`,
+        `META_CONTEXT (dados reais — NÃO invente números): connected=${metaContext.connected}, account=${metaContext.ad_account_name ?? "n/a"} (${metaContext.ad_account_id ?? "n/a"}), currency=${metaContext.currency ?? "n/a"}, period=${metaContext.period ? `${metaContext.period.from}..${metaContext.period.to}` : "n/a"}, summary=[${s}]. campaigns=[${camps || "n/a"}]. selected_campaign=${sel}. ${metaContext.guidance ?? ""}`,
       );
     }
     const extraSystem = contextBits.join(" ");
+    const basePrompt = isTrafficManager ? TRAFFIC_MANAGER_PROMPT : SYSTEM_PROMPT;
 
     const phases: { label: string; agent: string }[] = [];
+
+    // Traffic manager: analysis + optional web search + proposals + memory
+    if (isTrafficManager) {
+      if (!messages.length) throw new Error("Missing messages");
+
+      const orgId = String(body?.organization_id || metaContext?.organization_id || "");
+      const campaignExternalId =
+        body?.campaign_external_id !== undefined
+          ? body.campaign_external_id
+          : metaContext?.selected_campaign?.id ?? null;
+      const campaignName =
+        String(body?.campaign_name || metaContext?.selected_campaign?.name || "").slice(0, 200) ||
+        null;
+      const adAccountAssetId =
+        body?.ad_account_asset_id || metaContext?.ad_account_asset_id || null;
+
+      const auth = await requireUser(req);
+      if (auth instanceof Response) return auth;
+      if (orgId) {
+        const gate = await requireOrgMember(auth, orgId);
+        if (gate !== true) return gate;
+      }
+
+      const tmBits = [...contextBits];
+
+      // Memory (last turns for this campaign / account)
+      if (orgId) {
+        let memQ = auth.adminClient
+          .from("traffic_manager_memories")
+          .select("role, content, created_at")
+          .eq("organization_id", orgId)
+          .order("created_at", { ascending: false })
+          .limit(12);
+        if (campaignExternalId) {
+          memQ = memQ.eq("campaign_external_id", String(campaignExternalId));
+        } else {
+          memQ = memQ.is("campaign_external_id", null);
+        }
+        const { data: memRows } = await memQ;
+        if (memRows?.length) {
+          const chronological = [...memRows].reverse();
+          tmBits.push(
+            "MEMORY (conversas anteriores nesta campanha/conta — use como continuidade):\n" +
+              chronological
+                .map((r: any) => `${r.role}: ${String(r.content).slice(0, 500)}`)
+                .join("\n"),
+          );
+        }
+      }
+
+      if (Array.isArray(metaContext?.compare_campaigns) && metaContext.compare_campaigns.length) {
+        tmBits.push(
+          "compare_campaigns=" +
+            JSON.stringify(metaContext.compare_campaigns).slice(0, 6000),
+        );
+      }
+
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      const lastUserText = lastUser?.content ?? "";
+      let searchPayload: Awaited<ReturnType<typeof webSearch>> | null = null;
+      if (shouldWebSearch(lastUserText, !!body?.enableSearch)) {
+        phases.push({ label: "Pesquisando mercado / concorrência", agent: "researcher" });
+        const query =
+          String(body?.searchQuery || "").trim() ||
+          `${lastUserText.slice(0, 200)} Meta Ads tráfego pago Brasil`;
+        searchPayload = await webSearch(query, { maxResults: 5, apiKey });
+        tmBits.push(formatSearchForPrompt(searchPayload));
+      }
+
+      phases.push({ label: "Gerente de Tráfego analisando dados", agent: "media_buyer" });
+      const tmSystem = tmBits.join("\n\n");
+      let text = await callText(apiKey, messages, textModel, tmSystem, basePrompt);
+      text = text
+        .replace(/<\/?generate_image>[\s\S]*?(<\/generate_image>|$)/gi, "")
+        .replace(/<\/?generate_video>[\s\S]*?(<\/generate_video>|$)/gi, "")
+        .replace(/<\/?generate_ad_video>[\s\S]*?(<\/generate_ad_video>|$)/gi, "")
+        .trim();
+
+      const { actions, cleaned } = extractProposeActions(text);
+      text = cleaned;
+
+      let proposals: { id: string; title: string; tool_name: string; action_type: string }[] = [];
+      if (orgId && actions.length) {
+        phases.push({ label: "Registrando propostas para aprovação", agent: "media_buyer" });
+        proposals = await insertProposals(auth.adminClient, {
+          organizationId: orgId,
+          userId: auth.userId,
+          adAccountAssetId,
+          actions,
+          agent: "traffic_manager",
+        });
+        if (proposals.length) {
+          text +=
+            `\n\n---\n**${proposals.length} proposta(s)** enviada(s) para Aprovações: ` +
+            proposals.map((p) => p.title).join("; ") +
+            ".";
+        }
+      }
+
+      // Persist memory turns
+      if (orgId && lastUserText) {
+        const proposalIds = proposals.map((p) => p.id);
+        const sources = searchPayload?.results ?? [];
+        await auth.adminClient.from("traffic_manager_memories").insert([
+          {
+            organization_id: orgId,
+            user_id: auth.userId,
+            campaign_external_id: campaignExternalId ? String(campaignExternalId) : null,
+            campaign_name: campaignName,
+            role: "user",
+            content: lastUserText.slice(0, 8000),
+            sources: [],
+            proposal_ids: [],
+          },
+          {
+            organization_id: orgId,
+            user_id: auth.userId,
+            campaign_external_id: campaignExternalId ? String(campaignExternalId) : null,
+            campaign_name: campaignName,
+            role: "assistant",
+            content: text.slice(0, 12000),
+            sources,
+            proposal_ids: proposalIds,
+          },
+        ]);
+      }
+
+      return json({
+        text,
+        textModel,
+        phases,
+        role: "traffic_manager",
+        proposals,
+        search: searchPayload
+          ? {
+              provider: searchPayload.provider,
+              query: searchPayload.query,
+              results: searchPayload.results,
+              answer: searchPayload.answer,
+              error: searchPayload.error,
+            }
+          : null,
+      });
+    }
 
     // Direct visual modes
     if (mode === "image") {

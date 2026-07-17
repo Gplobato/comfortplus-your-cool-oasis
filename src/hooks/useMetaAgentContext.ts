@@ -9,6 +9,7 @@ export type MetaAgentContext = {
   connected: boolean;
   has_account: boolean;
   organization_id: string | null;
+  ad_account_asset_id: string | null;
   ad_account_id: string | null;
   ad_account_name: string | null;
   currency: string | null;
@@ -29,6 +30,7 @@ export function useMetaAgentContext(period?: { dateFrom?: string; dateTo?: strin
         connected: false,
         has_account: false,
         organization_id: meta.organizationId,
+        ad_account_asset_id: null,
         ad_account_id: null,
         ad_account_name: null,
         currency: null,
@@ -45,6 +47,7 @@ export function useMetaAgentContext(period?: { dateFrom?: string; dateTo?: strin
         connected: true,
         has_account: false,
         organization_id: meta.organizationId,
+        ad_account_asset_id: null,
         ad_account_id: null,
         ad_account_name: null,
         currency: null,
@@ -84,6 +87,7 @@ export function useMetaAgentContext(period?: { dateFrom?: string; dateTo?: strin
       connected: true,
       has_account: true,
       organization_id: meta.organizationId,
+      ad_account_asset_id: meta.selectedAdAccount.id,
       ad_account_id: meta.selectedAdAccount.account_id,
       ad_account_name: meta.selectedAdAccount.name,
       currency: meta.selectedAdAccount.currency,
