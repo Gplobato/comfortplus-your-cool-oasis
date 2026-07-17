@@ -2,12 +2,12 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Users2, DollarSign, TrendingUp, Target, MousePointerClick,
+  Users2, DollarSign, TrendingUp, Target, MousePointerClick, Megaphone,
   RefreshCw, ArrowRight, BarChart3, RotateCw,
   Eye, Percent, Activity, CircleDollarSign,
 } from "lucide-react";
 import {
-  ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
+  ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
 } from "recharts";
 import { PageHeader } from "@/components/proads/PageHeader";
 import { MetricCard } from "@/components/proads/MetricCard";
@@ -29,7 +29,7 @@ import { periodRange } from "@/lib/dates";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { useMetaDashboard, useMetaCampaigns } from "@/hooks/useMetaData";
 import { EmptyState } from "@/components/proads/EmptyState";
-import { TrafficManagerChat } from "@/components/proads/TrafficManagerChat";
+import { TrafficManagerPanel } from "@/components/proads/TrafficManagerPanel";
 import { CampaignComparator } from "@/components/proads/CampaignComparator";
 import { toast } from "sonner";
 import { metaInvalidationKeys } from "@/lib/metaKeys";
@@ -37,22 +37,16 @@ import { metaErrorMessage } from "@/lib/metaErrors";
 
 const PERIOD_DAYS: Record<string, number> = { "7d": 7, "14d": 14, "30d": 30, today: 1 };
 
-const RESULT_LABELS: Record<string, string> = {
-  lead: "leads",
-  purchase: "compras",
-  link_click: "cliques no link",
-  engagement: "interações",
-  app_install: "instalações",
-  video_view: "visualizações",
-  unknown: "resultados",
-};
+function safeMetric(value: number | null | undefined, formatter: (n: number) => string, empty = "—") {
+  if (value == null || !Number.isFinite(value)) return empty;
+  return formatter(value);
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const meta = useMetaIntegration();
   const [periodKey, setPeriodKey] = useState<"today" | "7d" | "14d" | "30d">("14d");
-  const [chartMode, setChartMode] = useState<"leads" | "spend">("spend");
   const [compareIds, setCompareIds] = useState<string[] | undefined>(undefined);
 
   const tz = meta.selectedAdAccount?.timezone || "America/Sao_Paulo";
@@ -67,7 +61,34 @@ export default function DashboardPage() {
   const useReal = meta.connected && !!meta.selectedAdAccount;
   const summary = dash.data?.summary;
   const deltas = dash.data?.deltas;
-  const series = dash.data?.series ?? [];
+  const series = useMemo(() => {
+    const raw = dash.data?.series ?? [];
+    if (!raw.length || !dateFrom || !dateTo) return raw;
+    const byDate = new Map(raw.map((point) => [point.date, point]));
+    const filled: typeof raw = [];
+    const cursor = new Date(`${dateFrom}T12:00:00`);
+    const end = new Date(`${dateTo}T12:00:00`);
+    while (cursor <= end) {
+      const key = cursor.toISOString().slice(0, 10);
+      filled.push(
+        byDate.get(key) ?? {
+          date: key,
+          spend: 0,
+          leads: 0,
+          cpl: null,
+          ctr: null,
+          impressions: 0,
+          clicks: 0,
+          cpm: null,
+          cpc: null,
+          results: 0,
+          cpr: null,
+        },
+      );
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return filled;
+  }, [dash.data?.series, dateFrom, dateTo]);
   const activeCampaigns = useMemo(() => {
     const list = camps.data?.campaigns ?? [];
     return [...list].sort((a, b) => b.spend - a.spend);
@@ -101,7 +122,7 @@ export default function DashboardPage() {
     try {
       await meta.sync();
       toast.success("Sincronização concluída", { id: "meta-sync" });
-    } catch (e: any) {
+    } catch (e) {
       const m = metaErrorMessage(e);
       toast.error(m.title, { id: "meta-sync", description: m.description });
     }
@@ -109,7 +130,9 @@ export default function DashboardPage() {
 
   const dashError = dash.error ? metaErrorMessage(dash.error) : null;
   const delta = (k: keyof NonNullable<typeof deltas>) =>
-    typeof deltas?.[k] === "number" ? (deltas![k] as number) : undefined;
+    typeof deltas?.[k] === "number" && Number.isFinite(deltas[k] as number)
+      ? (deltas![k] as number)
+      : undefined;
 
   return (
     <>
@@ -131,8 +154,10 @@ export default function DashboardPage() {
                 <Select
                   value={meta.selectedAdAccount?.id ?? ""}
                   onValueChange={async (v) => {
-                    try { await meta.selectAdAccount(v); toast.success("Conta atualizada"); }
-                    catch (e: any) {
+                    try {
+                      await meta.selectAdAccount(v);
+                      toast.success("Conta atualizada");
+                    } catch (e) {
                       const m = metaErrorMessage(e);
                       toast.error(m.title, { description: m.description });
                     }
@@ -154,7 +179,7 @@ export default function DashboardPage() {
               )}
             </div>
 
-            <Select value={periodKey} onValueChange={(v) => setPeriodKey(v as any)}>
+            <Select value={periodKey} onValueChange={(v) => setPeriodKey(v as typeof periodKey)}>
               <SelectTrigger className="h-9 w-[150px] bg-card"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="today">Hoje</SelectItem>
@@ -189,7 +214,9 @@ export default function DashboardPage() {
                 Integre a Meta Ads para ver métricas e campanhas reais neste painel.
               </p>
             </div>
-            <Button size="sm" onClick={() => navigate("/integracoes")}>Ir para Integrações</Button>
+            <Button size="sm" className="bg-gradient-brand text-primary-foreground" onClick={() => navigate("/integracoes")}>
+              Ir para Integrações
+            </Button>
           </Card>
         )}
 
@@ -219,146 +246,143 @@ export default function DashboardPage() {
         )}
 
         {/* Primary KPIs */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           {useReal && summary ? (
             <>
-              <MetricCard label="Investimento" value={formatCurrency(summary.spend)} delta={delta("spend")} icon={DollarSign} tone="brand" />
-              <MetricCard label="Impressões" value={formatNumber(summary.impressions)} delta={delta("impressions")} icon={Eye} tone="accent" />
-              <MetricCard label="Alcance" value={formatNumber(summary.reach)} icon={Users2} tone="accent" />
-              <MetricCard label="Cliques" value={formatNumber(summary.clicks)} delta={delta("clicks")} icon={MousePointerClick} tone="brand" />
-              <MetricCard label="CTR" value={formatMetaPercent(summary.ctr)} delta={delta("ctr")} icon={Percent} tone="success" />
-              <MetricCard label="CPC" value={formatMetaCurrency(summary.cpc)} icon={CircleDollarSign} tone="warning" />
+              <MetricCard label="Investimento" value={safeMetric(summary.spend, formatCurrency)} delta={delta("spend")} icon={DollarSign} tone="brand" />
+              <MetricCard label="Leads" value={safeMetric(summary.leads, formatNumber)} delta={delta("leads")} icon={Users2} tone="success" />
+              <MetricCard
+                label="CPL"
+                value={summary.leads > 0 ? safeMetric(summary.cpl, formatMetaCurrency) : "—"}
+                delta={delta("cpl")}
+                icon={Target}
+                tone="brand"
+                hint="Custo por lead. Só existe quando há leads no período."
+              />
+              <MetricCard
+                label="ROAS"
+                value={summary.revenue > 0 ? safeMetric(summary.roas, formatRoas) : "—"}
+                delta={delta("roas")}
+                icon={TrendingUp}
+                tone="success"
+                hint="Retorno sobre investimento com receita rastreada."
+              />
+              <MetricCard
+                label="Campanhas ativas"
+                value={safeMetric(summary.active_campaigns, formatNumber)}
+                icon={Megaphone}
+                tone="brand"
+              />
             </>
           ) : (
-            Array.from({ length: 6 }).map((_, i) => (
+            Array.from({ length: 5 }).map((_, i) => (
               <MetricCard key={i} label="—" value="—" icon={Activity} />
             ))
           )}
         </div>
 
         {/* Secondary KPIs */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-7">
           {useReal && summary ? (
             <>
-              <MetricCard label="CPM" value={formatMetaCurrency(summary.cpm)} delta={delta("cpm")} icon={TrendingUp} tone="brand" />
-              <MetricCard label="Frequência" value={formatFreq(summary.frequency)} icon={Activity} tone="accent" />
-              <MetricCard label="Leads" value={formatNumber(summary.leads)} delta={delta("leads")} icon={Users2} tone="brand" />
-              <MetricCard
-                label="CPL"
-                value={summary.leads > 0 ? formatMetaCurrency(summary.cpl) : "Sem leads"}
-                delta={delta("cpl")}
-                icon={Target}
-                tone="accent"
-                hint="Custo por lead. Só existe quando a Meta atribui pelo menos um lead no período."
-              />
-              <MetricCard
-                label="CPR"
-                value={summary.results > 0 ? formatMetaCurrency(summary.cpr) : "Sem resultados"}
-                delta={delta("cpr")}
-                icon={Target}
-                tone="warning"
-                deltaLabel={summary.result_type && summary.result_type !== "unknown" ? `por ${summary.result_type}` : undefined}
-                hint="Custo por resultado principal, definido pelo objetivo da campanha."
-              />
-              <MetricCard
-                label="ROAS"
-                value={summary.revenue > 0 ? formatRoas(summary.roas) : "Sem compras rastreadas"}
-                delta={delta("roas")}
-                icon={TrendingUp}
-                tone="success"
-                hint="Retorno sobre o investimento. Depende do valor de compra rastreado pela Meta."
-              />
+              <MetricCard size="sm" label="Impressões" value={safeMetric(summary.impressions, formatNumber)} icon={Eye} tone="brand" />
+              <MetricCard size="sm" label="Alcance" value={safeMetric(summary.reach, formatNumber)} icon={Users2} tone="brand" />
+              <MetricCard size="sm" label="Cliques" value={safeMetric(summary.clicks, formatNumber)} icon={MousePointerClick} tone="brand" />
+              <MetricCard size="sm" label="CTR" value={safeMetric(summary.ctr, (n) => formatMetaPercent(n))} icon={Percent} tone="success" />
+              <MetricCard size="sm" label="CPC" value={safeMetric(summary.cpc, formatMetaCurrency)} icon={CircleDollarSign} tone="brand" />
+              <MetricCard size="sm" label="CPM" value={safeMetric(summary.cpm, formatMetaCurrency)} icon={TrendingUp} tone="brand" />
+              <MetricCard size="sm" label="Frequência" value={safeMetric(summary.frequency, formatFreq)} icon={Activity} tone="warning" />
             </>
           ) : (
-            Array.from({ length: 6 }).map((_, i) => (
-              <MetricCard key={i} label="—" value="—" icon={Activity} />
+            Array.from({ length: 7 }).map((_, i) => (
+              <MetricCard key={i} size="sm" label="—" value="—" icon={Activity} />
             ))
           )}
         </div>
 
         {useReal && summary && (
           <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+            <Badge variant="outline" className="font-normal">{dash.data?.period.label}</Badge>
             <Badge variant="outline" className="font-normal">
-              {summary.active_campaigns} campanhas ativas
-            </Badge>
-            <Badge
-              variant="outline"
-              className="font-normal"
-              title="Resultado principal identificado pela Meta conforme o objetivo das campanhas."
-            >
-              {formatMetaNumber(summary.results)} {RESULT_LABELS[summary.result_type] ?? "resultados"}
-            </Badge>
-            <Badge variant="outline" className="font-normal" title="Cliques que levaram a pessoa para um destino do anúncio.">
               {formatMetaNumber(summary.link_clicks)} cliques no link
             </Badge>
             <Badge variant="outline" className="font-normal">
-              {formatMetaNumber(summary.conversions)} compras
-            </Badge>
-            {summary.revenue > 0 && (
-              <Badge variant="outline" className="font-normal">
-                Receita {formatCurrency(summary.revenue)}
-              </Badge>
-            )}
-            <Badge variant="outline" className="font-normal">
-              {dash.data?.period.label}
+              {formatMetaNumber(summary.results)} resultados
             </Badge>
           </div>
         )}
 
         {/* Chart */}
         <Card className="p-5 shadow-card">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="font-display font-bold">Desempenho</h3>
+              <h3 className="font-display font-bold">Desempenho diário</h3>
               <p className="text-xs text-muted-foreground">
                 {useReal
-                  ? `${dash.data?.period.label ?? ""} · ${meta.selectedAdAccount?.name ?? ""}`
+                  ? `${dash.data?.period.label ?? ""} · barras de investimento e linha de leads`
                   : "Conecte a Meta para ver a série diária"}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Select value={chartMode} onValueChange={(v) => setChartMode(v as any)}>
-                <SelectTrigger className="h-8 w-[170px] text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="spend">Investimento + CPM</SelectItem>
-                  <SelectItem value="leads">Leads + CPL</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
-          <div className="h-72 w-full">
+          <div className="h-56 w-full md:h-60">
             {useReal ? (
               dash.isLoading && !series.length ? (
                 <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Carregando…</div>
               ) : series.length ? (
                 <ResponsiveContainer>
-                  <ComposedChart data={series}>
+                  <ComposedChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                    <XAxis dataKey="date" tickFormatter={formatDate} stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={formatDate}
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={false}
+                      interval="preserveStartEnd"
+                      minTickGap={28}
+                    />
                     <YAxis yAxisId="left" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
                     <Tooltip
-                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }}
-                      formatter={(value: any, name: string) => {
-                        if (name === "spend" || name === "cpl" || name === "cpm" || name === "cpr") {
-                          return [formatCurrency(Number(value) || 0), name.toUpperCase()];
-                        }
-                        return [formatNumber(Number(value) || 0), name];
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null;
+                        const row = payload[0]?.payload as {
+                          spend?: number;
+                          leads?: number;
+                          cpl?: number | null;
+                          ctr?: number | null;
+                        };
+                        return (
+                          <div className="rounded-xl border border-border bg-card px-3 py-2 text-xs shadow-card">
+                            <p className="mb-1.5 font-semibold">{formatDate(String(label))}</p>
+                            <p>Investimento: {safeMetric(row.spend, formatCurrency)}</p>
+                            <p>Leads: {safeMetric(row.leads, formatNumber)}</p>
+                            <p>CPL: {row.leads && row.leads > 0 ? safeMetric(row.cpl, formatMetaCurrency) : "—"}</p>
+                            <p>CTR: {safeMetric(row.ctr, (v) => formatMetaPercent(v))}</p>
+                          </div>
+                        );
                       }}
-                      labelFormatter={(l) => formatDate(String(l))}
                     />
                     <Legend />
-                    {chartMode === "spend" ? (
-                      <>
-                        <Area yAxisId="left" type="monotone" dataKey="spend" name="Investimento" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
-                        <Line yAxisId="right" type="monotone" dataKey="cpm" name="CPM" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
-                      </>
-                    ) : (
-                      <>
-                        <Area yAxisId="left" type="monotone" dataKey="leads" name="Leads" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
-                        <Line yAxisId="right" type="monotone" dataKey="cpl" name="CPL" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
-                      </>
-                    )}
+                    <Bar
+                      yAxisId="left"
+                      dataKey="spend"
+                      name="Investimento"
+                      fill="hsl(var(--primary))"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={28}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="leads"
+                      name="Leads"
+                      stroke="hsl(var(--accent))"
+                      strokeWidth={2.5}
+                      dot={{ r: 3, fill: "hsl(var(--accent))" }}
+                      activeDot={{ r: 5 }}
+                    />
                   </ComposedChart>
                 </ResponsiveContainer>
               ) : (
@@ -376,9 +400,14 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          {useReal && series.length > 0 && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Tooltip com data, investimento, leads, CPL e CTR ao passar o mouse em cada dia.
+            </p>
+          )}
         </Card>
 
-        <TrafficManagerChat
+        <TrafficManagerPanel
           dateFrom={dateFrom}
           dateTo={dateTo}
           compareCampaignIds={compareIds}
@@ -391,7 +420,6 @@ export default function DashboardPage() {
           onAskManager={(ids) => setCompareIds(ids)}
         />
 
-        {/* Active Campaigns */}
         <Card className="shadow-card">
           <div className="flex items-center justify-between border-b border-border p-4">
             <div>
@@ -420,7 +448,6 @@ export default function DashboardPage() {
                       <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CTR</TableHead>
                       <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">Leads</TableHead>
                       <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CPL</TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">CPR</TableHead>
                       <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -440,8 +467,7 @@ export default function DashboardPage() {
                         <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpm)}</TableCell>
                         <TableCell className="text-right text-sm">{formatMetaPercent(c.ctr)}</TableCell>
                         <TableCell className="text-right text-sm">{formatMetaNumber(c.leads)}</TableCell>
-                        <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpl)}</TableCell>
-                        <TableCell className="text-right text-sm">{formatMetaCurrency(c.cpr)}</TableCell>
+                        <TableCell className="text-right text-sm">{c.leads > 0 ? formatMetaCurrency(c.cpl) : "—"}</TableCell>
                         <TableCell><CampaignStatusBadge status={c.status} /></TableCell>
                       </TableRow>
                     ))}

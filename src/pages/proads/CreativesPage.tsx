@@ -115,8 +115,15 @@ export default function CreativesPage() {
         {query.isLoading ? (
           <div className="p-10 text-center text-sm text-muted-foreground">Carregando sua galeria…</div>
         ) : query.error ? (
-          <Card className="border-destructive/40 bg-destructive/5 p-4 text-sm">
-            Não foi possível carregar a galeria: {query.error.message}
+          <Card className="space-y-2 border-destructive/40 bg-destructive/5 p-4 text-sm">
+            <p className="font-semibold">Não foi possível carregar a galeria</p>
+            <p className="text-muted-foreground">{query.error.message}</p>
+            {String(query.error.message).includes("creatives") && (
+              <p className="text-xs text-muted-foreground">
+                A tabela da galeria ainda não foi aplicada no Supabase do Lovable. Após o push da migration
+                `ensure_creatives_gallery`, recarregue esta página.
+              </p>
+            )}
           </Card>
         ) : filtered.length === 0 ? (
           <EmptyState

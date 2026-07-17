@@ -26,6 +26,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import proadsLogo from "@/assets/proads-logo.png";
 
 const nav = [
   { title: "Visão Geral", url: "/dashboard", icon: LayoutDashboard },
@@ -47,20 +48,23 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
-      <SidebarHeader className="px-4 py-5">
-        <NavLink to="/dashboard" className="flex items-center gap-2.5">
-          <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-brand text-primary-foreground shadow-brand">
-            <span className="font-display text-base font-black">P</span>
-            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-sidebar" />
+      <SidebarHeader className="px-3 py-4">
+        <NavLink to="/dashboard" className={cn("flex items-center", collapsed ? "justify-center" : "px-1")}>
+          <div
+            className={cn(
+              "overflow-hidden rounded-xl bg-black shadow-sm",
+              collapsed ? "h-9 w-9" : "px-2.5 py-1.5",
+            )}
+          >
+            <img
+              src={proadsLogo}
+              alt="ProAds Marketing OS"
+              className={cn(
+                "object-contain object-left",
+                collapsed ? "h-full w-full scale-125" : "h-8 w-auto max-w-[158px]",
+              )}
+            />
           </div>
-          {!collapsed && (
-            <div className="flex flex-col leading-none">
-              <span className="font-display text-lg font-extrabold tracking-tight">ProAds</span>
-              <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-                Marketing OS
-              </span>
-            </div>
-          )}
         </NavLink>
       </SidebarHeader>
 
