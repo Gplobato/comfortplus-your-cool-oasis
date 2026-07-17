@@ -68,7 +68,7 @@ export default function UsersSettingsPage() {
         id: membership.user_id,
         name: profile?.full_name || profile?.username || "Usuário",
         username: profile?.username || null,
-        email: profile?.email || "—",
+        email: "—",
         roles: rolesById.get(membership.user_id) ?? [],
         joinedAt: membership.created_at,
       };
