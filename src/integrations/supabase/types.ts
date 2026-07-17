@@ -226,53 +226,6 @@ export type Database = {
           },
         ]
       }
-      traffic_manager_memories: {
-        Row: {
-          id: string
-          organization_id: string
-          user_id: string | null
-          campaign_external_id: string | null
-          campaign_name: string | null
-          role: string
-          content: string
-          sources: Json
-          proposal_ids: string[]
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          organization_id: string
-          user_id?: string | null
-          campaign_external_id?: string | null
-          campaign_name?: string | null
-          role: string
-          content: string
-          sources?: Json
-          proposal_ids?: string[]
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          organization_id?: string
-          user_id?: string | null
-          campaign_external_id?: string | null
-          campaign_name?: string | null
-          role?: string
-          content?: string
-          sources?: Json
-          proposal_ids?: string[]
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "traffic_manager_memories_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       mcp_sessions: {
         Row: {
           connection_id: string
@@ -584,31 +537,25 @@ export type Database = {
           avatar_url: string | null
           created_at: string
           default_organization_id: string | null
-          email: string | null
           full_name: string | null
           id: string
           updated_at: string
-          username: string | null
         }
         Insert: {
           avatar_url?: string | null
           created_at?: string
           default_organization_id?: string | null
-          email?: string | null
           full_name?: string | null
           id: string
           updated_at?: string
-          username?: string | null
         }
         Update: {
           avatar_url?: string | null
           created_at?: string
           default_organization_id?: string | null
-          email?: string | null
           full_name?: string | null
           id?: string
           updated_at?: string
-          username?: string | null
         }
         Relationships: [
           {
