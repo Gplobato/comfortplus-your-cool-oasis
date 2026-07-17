@@ -414,7 +414,7 @@ export function TrafficManagerChat({
 
         // Best-effort DB memory (org-level backup)
         try {
-          await supabase.from("traffic_manager_memories").insert([
+          await (supabase.from as any)("traffic_manager_memories").insert([
             {
               organization_id: orgId,
               user_id: (await supabase.auth.getUser()).data.user?.id ?? null,
