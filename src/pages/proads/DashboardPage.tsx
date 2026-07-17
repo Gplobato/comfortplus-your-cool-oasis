@@ -28,6 +28,8 @@ import {
 import { periodRange } from "@/lib/dates";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { useMetaDashboard, useMetaCampaigns } from "@/hooks/useMetaData";
+import { useMetaGeo } from "@/hooks/useMetaGeo";
+import { WorldReachMap } from "@/components/proads/WorldReachMap";
 import { EmptyState } from "@/components/proads/EmptyState";
 import { TrafficManagerPanel } from "@/components/proads/TrafficManagerPanel";
 import { CampaignComparator } from "@/components/proads/CampaignComparator";
@@ -57,6 +59,8 @@ export default function DashboardPage() {
 
   const dash = useMetaDashboard({ dateFrom, dateTo });
   const camps = useMetaCampaigns({ status: "ACTIVE", dateFrom, dateTo });
+  const geo = useMetaGeo({ dateFrom, dateTo, breakdown: "country" });
+  const [geoMetric, setGeoMetric] = useState<"impressions" | "reach" | "clicks" | "leads">("impressions");
 
   const useReal = meta.connected && !!meta.selectedAdAccount;
   const summary = dash.data?.summary;
@@ -312,100 +316,135 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Chart */}
-        <Card className="p-5 shadow-card">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="font-display font-bold">Desempenho diário</h3>
-              <p className="text-xs text-muted-foreground">
-                {useReal
-                  ? `${dash.data?.period.label ?? ""} · barras de investimento e linha de leads`
-                  : "Conecte a Meta para ver a série diária"}
-              </p>
+        {/* Chart + World map split */}
+        <div className="grid gap-4 lg:grid-cols-5">
+          <Card className="p-5 shadow-card lg:col-span-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-display font-bold">Desempenho diário</h3>
+                <p className="text-xs text-muted-foreground">
+                  {useReal
+                    ? `${dash.data?.period.label ?? ""} · barras de investimento e linha de leads`
+                    : "Conecte a Meta para ver a série diária"}
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="h-56 w-full md:h-60">
-            {useReal ? (
-              dash.isLoading && !series.length ? (
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Carregando…</div>
-              ) : series.length ? (
-                <ResponsiveContainer>
-                  <ComposedChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                    <XAxis
-                      dataKey="date"
-                      tickFormatter={formatDate}
-                      stroke="hsl(var(--muted-foreground))"
-                      fontSize={11}
-                      tickLine={false}
-                      axisLine={false}
-                      interval="preserveStartEnd"
-                      minTickGap={28}
-                    />
-                    <YAxis yAxisId="left" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                    <Tooltip
-                      content={({ active, payload, label }) => {
-                        if (!active || !payload?.length) return null;
-                        const row = payload[0]?.payload as {
-                          spend?: number;
-                          leads?: number;
-                          cpl?: number | null;
-                          ctr?: number | null;
-                        };
-                        return (
-                          <div className="rounded-xl border border-border bg-card px-3 py-2 text-xs shadow-card">
-                            <p className="mb-1.5 font-semibold">{formatDate(String(label))}</p>
-                            <p>Investimento: {safeMetric(row.spend, formatCurrency)}</p>
-                            <p>Leads: {safeMetric(row.leads, formatNumber)}</p>
-                            <p>CPL: {row.leads && row.leads > 0 ? safeMetric(row.cpl, formatMetaCurrency) : "—"}</p>
-                            <p>CTR: {safeMetric(row.ctr, (v) => formatMetaPercent(v))}</p>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Legend />
-                    <Bar
-                      yAxisId="left"
-                      dataKey="spend"
-                      name="Investimento"
-                      fill="hsl(var(--primary))"
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={28}
-                    />
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="leads"
-                      name="Leads"
-                      stroke="hsl(var(--accent))"
-                      strokeWidth={2.5}
-                      dot={{ r: 3, fill: "hsl(var(--accent))" }}
-                      activeDot={{ r: 5 }}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
+            <div className="h-56 w-full md:h-64">
+              {useReal ? (
+                dash.isLoading && !series.length ? (
+                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Carregando…</div>
+                ) : series.length ? (
+                  <ResponsiveContainer>
+                    <ComposedChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={formatDate}
+                        stroke="hsl(var(--muted-foreground))"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        interval="preserveStartEnd"
+                        minTickGap={28}
+                      />
+                      <YAxis yAxisId="left" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                      <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <Tooltip
+                        content={({ active, payload, label }) => {
+                          if (!active || !payload?.length) return null;
+                          const row = payload[0]?.payload as {
+                            spend?: number;
+                            leads?: number;
+                            cpl?: number | null;
+                            ctr?: number | null;
+                          };
+                          return (
+                            <div className="rounded-xl border border-border bg-card px-3 py-2 text-xs shadow-card">
+                              <p className="mb-1.5 font-semibold">{formatDate(String(label))}</p>
+                              <p>Investimento: {safeMetric(row.spend, formatCurrency)}</p>
+                              <p>Leads: {safeMetric(row.leads, formatNumber)}</p>
+                              <p>CPL: {row.leads && row.leads > 0 ? safeMetric(row.cpl, formatMetaCurrency) : "—"}</p>
+                              <p>CTR: {safeMetric(row.ctr, (v) => formatMetaPercent(v))}</p>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Legend />
+                      <Bar
+                        yAxisId="left"
+                        dataKey="spend"
+                        name="Investimento"
+                        fill="hsl(var(--primary))"
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={28}
+                      />
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="leads"
+                        name="Leads"
+                        stroke="hsl(var(--accent))"
+                        strokeWidth={2.5}
+                        dot={{ r: 3, fill: "hsl(var(--accent))" }}
+                        activeDot={{ r: 5 }}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <EmptyState icon={BarChart3} title="Sem dados no período" description="Nenhuma métrica retornada pela Meta para esta janela." />
+                  </div>
+                )
               ) : (
                 <div className="flex h-full items-center justify-center">
-                  <EmptyState icon={BarChart3} title="Sem dados no período" description="Nenhuma métrica retornada pela Meta para esta janela." />
+                  <EmptyState
+                    icon={BarChart3}
+                    title="Conta Meta não conectada"
+                    description="Conecte sua conta Meta em Integrações para ver métricas reais."
+                  />
                 </div>
-              )
-            ) : (
-              <div className="flex h-full items-center justify-center">
-                <EmptyState
-                  icon={BarChart3}
-                  title="Conta Meta não conectada"
-                  description="Conecte sua conta Meta em Integrações para ver métricas reais."
-                />
-              </div>
+              )}
+            </div>
+            {useReal && series.length > 0 && (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Tooltip com data, investimento, leads, CPL e CTR ao passar o mouse em cada dia.
+              </p>
             )}
-          </div>
-          {useReal && series.length > 0 && (
-            <p className="mt-2 text-[11px] text-muted-foreground">
-              Tooltip com data, investimento, leads, CPL e CTR ao passar o mouse em cada dia.
-            </p>
-          )}
-        </Card>
+          </Card>
+
+          {/* World reach map */}
+          <Card className="overflow-hidden border-white/5 bg-slate-950 p-0 shadow-card lg:col-span-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 p-4">
+              <div>
+                <h3 className="font-display font-bold text-white">Alcance global</h3>
+                <p className="text-[11px] text-white/60">
+                  {useReal
+                    ? "Onde seus anúncios estão sendo entregues"
+                    : "Conecte a Meta para ver a distribuição geográfica"}
+                </p>
+              </div>
+              <Select value={geoMetric} onValueChange={(v) => setGeoMetric(v as typeof geoMetric)}>
+                <SelectTrigger className="h-8 w-[130px] border-white/10 bg-white/5 text-xs text-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="impressions">Impressões</SelectItem>
+                  <SelectItem value="reach">Alcance</SelectItem>
+                  <SelectItem value="clicks">Cliques</SelectItem>
+                  <SelectItem value="leads">Leads</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="h-[280px] w-full md:h-[320px]">
+              <WorldReachMap
+                points={geo.data?.points ?? []}
+                metric={geoMetric}
+                loading={geo.isLoading}
+              />
+            </div>
+          </Card>
+        </div>
+
 
         <TrafficManagerPanel
           dateFrom={dateFrom}
