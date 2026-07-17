@@ -1,7 +1,9 @@
-export function formatCurrency(value: number) {
+export function formatCurrency(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 }
-export function formatCompactCurrency(value: number) {
+export function formatCompactCurrency(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
@@ -9,7 +11,8 @@ export function formatCompactCurrency(value: number) {
     maximumFractionDigits: 1,
   }).format(value);
 }
-export function formatNumber(value: number) {
+export function formatNumber(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("pt-BR").format(value);
 }
 export function formatDate(iso: string) {

@@ -37,6 +37,16 @@ import { metaErrorMessage } from "@/lib/metaErrors";
 
 const PERIOD_DAYS: Record<string, number> = { "7d": 7, "14d": 14, "30d": 30, today: 1 };
 
+const RESULT_LABELS: Record<string, string> = {
+  lead: "leads",
+  purchase: "compras",
+  link_click: "cliques no link",
+  engagement: "interações",
+  app_install: "instalações",
+  video_view: "visualizações",
+  unknown: "resultados",
+};
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -233,16 +243,31 @@ export default function DashboardPage() {
               <MetricCard label="CPM" value={formatMetaCurrency(summary.cpm)} delta={delta("cpm")} icon={TrendingUp} tone="brand" />
               <MetricCard label="Frequência" value={formatFreq(summary.frequency)} icon={Activity} tone="accent" />
               <MetricCard label="Leads" value={formatNumber(summary.leads)} delta={delta("leads")} icon={Users2} tone="brand" />
-              <MetricCard label="CPL" value={formatMetaCurrency(summary.cpl)} delta={delta("cpl")} icon={Target} tone="accent" />
+              <MetricCard
+                label="CPL"
+                value={summary.leads > 0 ? formatMetaCurrency(summary.cpl) : "Sem leads"}
+                delta={delta("cpl")}
+                icon={Target}
+                tone="accent"
+                hint="Custo por lead. Só existe quando a Meta atribui pelo menos um lead no período."
+              />
               <MetricCard
                 label="CPR"
-                value={formatMetaCurrency(summary.cpr)}
+                value={summary.results > 0 ? formatMetaCurrency(summary.cpr) : "Sem resultados"}
                 delta={delta("cpr")}
                 icon={Target}
                 tone="warning"
                 deltaLabel={summary.result_type && summary.result_type !== "unknown" ? `por ${summary.result_type}` : undefined}
+                hint="Custo por resultado principal, definido pelo objetivo da campanha."
               />
-              <MetricCard label="ROAS" value={formatRoas(summary.roas)} delta={delta("roas")} icon={TrendingUp} tone="success" />
+              <MetricCard
+                label="ROAS"
+                value={summary.revenue > 0 ? formatRoas(summary.roas) : "Sem compras rastreadas"}
+                delta={delta("roas")}
+                icon={TrendingUp}
+                tone="success"
+                hint="Retorno sobre o investimento. Depende do valor de compra rastreado pela Meta."
+              />
             </>
           ) : (
             Array.from({ length: 6 }).map((_, i) => (
@@ -256,14 +281,18 @@ export default function DashboardPage() {
             <Badge variant="outline" className="font-normal">
               {summary.active_campaigns} campanhas ativas
             </Badge>
-            <Badge variant="outline" className="font-normal">
-              {formatNumber(summary.results)} resultados ({summary.result_type || "—"})
+            <Badge
+              variant="outline"
+              className="font-normal"
+              title="Resultado principal identificado pela Meta conforme o objetivo das campanhas."
+            >
+              {formatMetaNumber(summary.results)} {RESULT_LABELS[summary.result_type] ?? "resultados"}
+            </Badge>
+            <Badge variant="outline" className="font-normal" title="Cliques que levaram a pessoa para um destino do anúncio.">
+              {formatMetaNumber(summary.link_clicks)} cliques no link
             </Badge>
             <Badge variant="outline" className="font-normal">
-              {formatNumber(summary.link_clicks)} link clicks
-            </Badge>
-            <Badge variant="outline" className="font-normal">
-              {formatNumber(summary.conversions)} compras
+              {formatMetaNumber(summary.conversions)} compras
             </Badge>
             {summary.revenue > 0 && (
               <Badge variant="outline" className="font-normal">

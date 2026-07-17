@@ -24,6 +24,7 @@ import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { useMetaCampaigns, type MetaCampaignRow } from "@/hooks/useMetaData";
 import { metaKeys } from "@/lib/metaKeys";
 import { metaErrorMessage } from "@/lib/metaErrors";
+import { metaActionToastMessage, submitMetaAction } from "@/lib/meta-actions";
 
 type Row = MetaCampaignRow & { createdByAI?: boolean };
 type SortKey = "spend" | "leads" | "cpm" | "cpl" | "cpr" | "ctr" | "name" | "impressions";
@@ -41,7 +42,7 @@ const ALL_COLS = [
   { key: "impressions", label: "Impressões" },
   { key: "reach", label: "Alcance" },
   { key: "clicks", label: "Cliques" },
-  { key: "link_clicks", label: "Link clicks" },
+  { key: "link_clicks", label: "Cliques no link" },
   { key: "ctr", label: "CTR" },
   { key: "cpc", label: "CPC" },
   { key: "cpm", label: "CPM" },
@@ -84,6 +85,7 @@ export default function CampaignsPage() {
   const [cols, setCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS));
   const [sortKey, setSortKey] = useState<SortKey>("spend");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [actionBusy, setActionBusy] = useState(false);
 
   const tz = meta.selectedAdAccount?.timezone || "America/Sao_Paulo";
   const { dateFrom, dateTo } = useMemo(
@@ -147,12 +149,14 @@ export default function CampaignsPage() {
 
   const toggle = (id: string) => {
     const next = new Set(selected);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     setSelected(next);
   };
   const toggleCol = (k: ColKey) => {
     const next = new Set(cols);
-    next.has(k) ? next.delete(k) : next.add(k);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
     setCols(next);
   };
   const show = (k: ColKey) => cols.has(k);
@@ -160,6 +164,33 @@ export default function CampaignsPage() {
   const toggleSort = (k: SortKey) => {
     if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(k); setSortDir("desc"); }
+  };
+
+  const changeCampaignStatus = async (campaign: Row, next: "PAUSED" | "ACTIVE") => {
+    if (!meta.organizationId) return;
+    const result = await submitMetaAction({
+      organizationId: meta.organizationId,
+      toolName: next === "PAUSED" ? "meta.pause_campaign" : "meta.activate_campaign",
+      arguments: { campaign_id: campaign.id },
+      title: `${next === "PAUSED" ? "Pausar" : "Ativar"} campanha ${campaign.name}`,
+      explanation: next === "PAUSED"
+        ? "Pausa reversível solicitada na tela de campanhas."
+        : "Reativação com potencial de gasto; exige aprovação.",
+    });
+    toast.success(metaActionToastMessage(result));
+    await qc.invalidateQueries({ queryKey: metaKeys.campaigns(meta.organizationId, meta.selectedAdAccount?.id ?? null) });
+  };
+
+  const pauseSelected = async () => {
+    if (!meta.organizationId) return;
+    const targets = items.filter((campaign) => selected.has(campaign.id) && campaign.status === "ACTIVE");
+    if (!targets.length) return toast.info("Nenhuma campanha ativa selecionada");
+    setActionBusy(true);
+    const results = await Promise.allSettled(targets.map((campaign) => changeCampaignStatus(campaign, "PAUSED")));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    if (failed) toast.error(`${failed} campanha(s) não puderam ser pausadas`);
+    setSelected(new Set());
+    setActionBusy(false);
   };
 
   const SortHead = ({ k, children, className }: { k: SortKey; children: React.ReactNode; className?: string }) => (
@@ -299,7 +330,9 @@ export default function CampaignsPage() {
           {selected.size > 0 && (
             <div className="ml-auto flex items-center gap-2">
               <span className="text-xs text-muted-foreground">{selected.size} selecionadas</span>
-              <Button variant="outline" size="sm" className="h-8" onClick={() => toast.info("Escrita na Meta em breve")}>Pausar</Button>
+              <Button variant="outline" size="sm" className="h-8" disabled={actionBusy} onClick={() => void pauseSelected()}>
+                {actionBusy ? "Pausando…" : "Pausar"}
+              </Button>
             </div>
           )}
         </Card>
@@ -313,8 +346,8 @@ export default function CampaignsPage() {
               { label: "CTR", value: formatMetaPercent(totals.ctr) },
               { label: "CPM", value: formatMetaCurrency(totals.cpm) },
               { label: "Leads", value: formatNumber(totals.leads) },
-              { label: "CPL", value: formatMetaCurrency(totals.cpl) },
-              { label: "CPR", value: formatMetaCurrency(totals.cpr) },
+              { label: "CPL", value: totals.leads > 0 ? formatMetaCurrency(totals.cpl) : "Sem leads" },
+              { label: "CPR", value: totals.results > 0 ? formatMetaCurrency(totals.cpr) : "Sem resultados" },
             ].map((m) => (
               <Card key={m.label} className="p-3 shadow-card">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{m.label}</p>
@@ -356,7 +389,7 @@ export default function CampaignsPage() {
                     {show("impressions") && <SortHead k="impressions" className="text-right">Impressões</SortHead>}
                     {show("reach") && <TableHead className="text-right text-xs uppercase tracking-wider">Alcance</TableHead>}
                     {show("clicks") && <TableHead className="text-right text-xs uppercase tracking-wider">Cliques</TableHead>}
-                    {show("link_clicks") && <TableHead className="text-right text-xs uppercase tracking-wider">Link clicks</TableHead>}
+                    {show("link_clicks") && <TableHead className="text-right text-xs uppercase tracking-wider">Cliques no link</TableHead>}
                     {show("ctr") && <SortHead k="ctr" className="text-right">CTR</SortHead>}
                     {show("cpc") && <TableHead className="text-right text-xs uppercase tracking-wider">CPC</TableHead>}
                     {show("cpm") && <SortHead k="cpm" className="text-right">CPM</SortHead>}
@@ -428,6 +461,11 @@ export default function CampaignsPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => navigate(`/campanhas/${c.id}`)}>Visualizar</DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => void changeCampaignStatus(c, c.status === "ACTIVE" ? "PAUSED" : "ACTIVE")}
+                              >
+                                {c.status === "ACTIVE" ? "Pausar agora" : "Solicitar ativação"}
+                              </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem className="gap-2" asChild>
                                 <a

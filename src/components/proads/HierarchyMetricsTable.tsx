@@ -26,6 +26,7 @@ export type HierarchyMetricRow = {
   dailyBudget?: number;
   subtitle?: string;
   leading?: ReactNode;
+  actions?: ReactNode;
 };
 
 export function HierarchyMetricsTable({
@@ -61,6 +62,7 @@ export function HierarchyMetricsTable({
             <TableHead className="text-right text-xs uppercase tracking-wider">CPR</TableHead>
             <TableHead className="text-right text-xs uppercase tracking-wider">ROAS</TableHead>
             <TableHead className="text-xs uppercase tracking-wider">Status</TableHead>
+            {rows.some((row) => row.actions) && <TableHead className="text-right text-xs uppercase tracking-wider">Ações</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -95,6 +97,7 @@ export function HierarchyMetricsTable({
               <TableCell className="text-right text-sm">{formatMetaCurrency(r.cpr)}</TableCell>
               <TableCell className="text-right text-sm">{formatRoas(r.roas)}</TableCell>
               <TableCell><CampaignStatusBadge status={r.status} /></TableCell>
+              {rows.some((row) => row.actions) && <TableCell className="text-right">{r.actions}</TableCell>}
             </TableRow>
           ))}
         </TableBody>

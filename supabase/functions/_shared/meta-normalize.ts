@@ -4,7 +4,9 @@
 
 export const LEAD_ACTION_TYPES = [
   "lead",
+  "onsite_conversion.lead",
   "onsite_conversion.lead_grouped",
+  "offsite_conversion.lead",
   "offsite_conversion.fb_pixel_lead",
   "messaging_conversation_started_7d",
   "contact",
@@ -65,6 +67,11 @@ function sumByTypes(list: Action[] | undefined, types: readonly string[]): numbe
     total += num(a.value);
   }
   return total;
+}
+
+export function sumActionValues(list: Action[] | undefined): number {
+  if (!Array.isArray(list)) return 0;
+  return list.reduce((total, item) => total + num(item.value), 0);
 }
 
 function firstCostByTypes(
@@ -149,6 +156,7 @@ export function normalizeObjective(raw: string | null | undefined): string {
 export function extractResults(
   actions: Action[] | undefined,
   objective?: string | null,
+  fallbacks?: { linkClicks?: number; videoViews?: number },
 ): { results: number; result_type: string } {
   const obj = normalizeObjective(objective);
   if (obj.includes("lead") || obj.includes("message") || obj === "leads") {
@@ -158,7 +166,10 @@ export function extractResults(
     return { results: extractConversionCount(actions), result_type: "purchase" };
   }
   if (obj.includes("traffic") || obj.includes("link")) {
-    return { results: extractLinkClicks(actions), result_type: "link_click" };
+    return {
+      results: extractLinkClicks(actions) || fallbacks?.linkClicks || 0,
+      result_type: "link_click",
+    };
   }
   if (obj.includes("engagement") || obj.includes("post")) {
     return { results: sumByTypes(actions, ENGAGEMENT_ACTION_TYPES), result_type: "engagement" };
@@ -166,13 +177,22 @@ export function extractResults(
   if (obj.includes("app")) {
     return { results: sumByTypes(actions, APP_INSTALL_ACTION_TYPES), result_type: "app_install" };
   }
+  if (obj.includes("video") || obj.includes("awareness")) {
+    return {
+      results: fallbacks?.videoViews || fallbacks?.linkClicks || 0,
+      result_type: fallbacks?.videoViews ? "video_view" : "link_click",
+    };
+  }
   // awareness / video / unknown — prefer leads, then purchases, then link clicks
   const leads = extractLeadCount(actions);
   if (leads > 0) return { results: leads, result_type: "lead" };
   const purchases = extractConversionCount(actions);
   if (purchases > 0) return { results: purchases, result_type: "purchase" };
-  const clicks = extractLinkClicks(actions);
+  const clicks = extractLinkClicks(actions) || fallbacks?.linkClicks || 0;
   if (clicks > 0) return { results: clicks, result_type: "link_click" };
+  if ((fallbacks?.videoViews || 0) > 0) {
+    return { results: fallbacks!.videoViews!, result_type: "video_view" };
+  }
   return { results: 0, result_type: "unknown" };
 }
 

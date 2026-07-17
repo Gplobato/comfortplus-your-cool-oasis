@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { metaKeys } from "@/lib/metaKeys";
+import { listOwnedCreatives, type OwnedCreative } from "@/lib/creative-library";
 
 async function fetchJson(path: string, params: Record<string, string>) {
   const session = (await supabase.auth.getSession()).data.session;
@@ -43,7 +44,52 @@ export type MetaSummary = {
   revenue: number;
   roas: number | null;
   active_campaigns: number;
+  metric_availability?: {
+    cpl: boolean;
+    cpr: boolean;
+    roas: boolean;
+    result: boolean;
+  };
 };
+
+function finiteOrZero(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function finiteOrNull(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function normalizeMetaSummary(value: Partial<MetaSummary> | null | undefined): MetaSummary {
+  const s = value ?? {};
+  return {
+    spend: finiteOrZero(s.spend),
+    impressions: finiteOrZero(s.impressions),
+    reach: finiteOrZero(s.reach),
+    clicks: finiteOrZero(s.clicks),
+    unique_clicks: finiteOrZero(s.unique_clicks),
+    link_clicks: finiteOrZero(s.link_clicks),
+    ctr: finiteOrNull(s.ctr),
+    cpc: finiteOrNull(s.cpc),
+    cpm: finiteOrNull(s.cpm),
+    cpp: finiteOrNull(s.cpp),
+    frequency: finiteOrNull(s.frequency),
+    leads: finiteOrZero(s.leads),
+    cpl: finiteOrNull(s.cpl),
+    conversions: finiteOrZero(s.conversions),
+    cost_per_conversion: finiteOrNull(s.cost_per_conversion),
+    results: finiteOrZero(s.results),
+    result_type: String(s.result_type || "unknown"),
+    cpr: finiteOrNull(s.cpr),
+    revenue: finiteOrZero(s.revenue),
+    roas: finiteOrNull(s.roas),
+    active_campaigns: finiteOrZero(s.active_campaigns),
+    metric_availability: s.metric_availability,
+  };
+}
 
 export type MetaSeriesPoint = {
   date: string;
@@ -94,7 +140,14 @@ export function useMetaDashboard(opts?: { dateFrom?: string; dateTo?: string; ca
       to: opts?.dateTo,
       status: opts?.campaignStatus,
     }),
-    queryFn: () => fetchJson("meta-dashboard", params) as Promise<MetaDashboard>,
+    queryFn: async () => {
+      const raw = (await fetchJson("meta-dashboard", params)) as MetaDashboard;
+      return {
+        ...raw,
+        summary: normalizeMetaSummary(raw.summary),
+        previous: raw.previous ? normalizeMetaSummary(raw.previous) : undefined,
+      };
+    },
     enabled: !!organizationId && !!selectedAdAccount && connected,
     staleTime: 90_000,
     placeholderData: (prev) => prev,
@@ -130,6 +183,7 @@ export type MetaCampaignRow = {
   cpl: number | null;
   cpr?: number | null;
   roas: number | null;
+  metric_availability?: MetaSummary["metric_availability"];
   startTime: string | null;
   stopTime: string | null;
   createdAt: string;
@@ -306,83 +360,29 @@ export function useMetaCampaignDetail(
   });
 }
 
-export type LibraryCreative = {
-  id: string;
-  db_id: string | null;
-  source: "meta" | "ai" | "upload";
-  meta_creative_id: string | null;
-  name: string;
-  type: string;
-  object_type: string | null;
-  status: string;
-  thumbnail_url: string | null;
-  media_url: string | null;
-  headline: string | null;
-  primary_text: string | null;
-  cta: string | null;
-  format: string | null;
-  created_by_ai: boolean;
-  in_use: boolean;
-  ads_count: number;
-  active_ads_count: number;
-  ad_names?: string[];
-  campaign_ids?: string[];
-  performance: {
-    spend: number;
-    impressions: number;
-    reach: number;
-    clicks: number;
-    ctr: number | null;
-    cpc: number | null;
-    cpm: number | null;
-    frequency: number | null;
-    leads: number;
-    cpl: number | null;
-    conversions: number;
-    results: number;
-    cpr: number | null;
-    revenue: number;
-    roas: number | null;
-  };
-  created_at: string | null;
-  updated_at: string | null;
-  last_synced_at: string | null;
-};
+export type LibraryCreative = OwnedCreative;
 
 export function useMetaCreatives(opts?: {
-  dateFrom?: string;
-  dateTo?: string;
-  inUse?: "all" | "true" | "false";
-  sync?: boolean;
+  includeArchived?: boolean;
 }) {
-  const { organizationId, selectedAdAccount, connected } = useMetaIntegration();
-  const params: Record<string, string> = { organization_id: organizationId ?? "" };
-  if (opts?.dateFrom) params.date_from = opts.dateFrom;
-  if (opts?.dateTo) params.date_to = opts.dateTo;
-  if (opts?.inUse && opts.inUse !== "all") params.in_use = opts.inUse;
-  if (opts?.sync) params.sync = "1";
-
-  // Served via meta-campaigns?resource=creatives (meta-creatives is not deployed yet)
-  params.resource = "creatives";
+  const { organizationId } = useMetaIntegration();
 
   return useQuery({
-    queryKey: metaKeys.creatives(organizationId, selectedAdAccount?.id ?? null, {
-      from: opts?.dateFrom,
-      to: opts?.dateTo,
-      inUse: opts?.inUse,
-    }),
+    queryKey: ["creative-library", organizationId, !!opts?.includeArchived],
     queryFn: async () => {
-      const j = await fetchJson("meta-campaigns", params);
-      return j as {
-        creatives: LibraryCreative[];
-        counts?: { total: number; meta: number; ai: number; upload: number; in_use: number };
-        period?: { date_from: string; date_to: string; label: string };
-        warnings: string[];
-        request_id?: string;
-        data_source?: string;
+      const creatives = await listOwnedCreatives(organizationId!, !!opts?.includeArchived);
+      return {
+        creatives,
+        counts: {
+          total: creatives.length,
+          ai: creatives.filter((c) => c.source === "ai").length,
+          upload: creatives.filter((c) => c.source === "upload").length,
+          ready: creatives.filter((c) => c.publication_status === "ready").length,
+        },
+        warnings: [] as string[],
+        data_source: "owned_library",
       };
     },
-    // Needs org; Meta optional (AI/upload rows still returned)
     enabled: !!organizationId,
     staleTime: 90_000,
     placeholderData: (prev) => prev,

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, Pause, Play, Copy, ExternalLink, DollarSign, MousePointerClick,
+  ArrowLeft, Pause, Play, ExternalLink, DollarSign, MousePointerClick,
   Target, Users2, Eye, Percent, TrendingUp, Activity, ImageIcon,
 } from "lucide-react";
 import {
@@ -25,6 +25,7 @@ import { periodRange } from "@/lib/dates";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { useMetaCampaignDetail } from "@/hooks/useMetaData";
 import { toast } from "sonner";
+import { metaActionToastMessage, submitMetaAction } from "@/lib/meta-actions";
 
 const PERIOD_DAYS: Record<string, number> = { today: 1, "7d": 7, "14d": 14, "30d": 30 };
 
@@ -41,6 +42,7 @@ export default function CampaignDetailPage() {
   const [adsetStatus, setAdsetStatus] = useState<string>("all");
   const [adStatus, setAdStatus] = useState<string>("all");
   const [selectedAdsetId, setSelectedAdsetId] = useState<string>("all");
+  const [actionBusy, setActionBusy] = useState(false);
 
   const tz = meta.selectedAdAccount?.timezone || "America/Sao_Paulo";
   const { dateFrom, dateTo } = useMemo(
@@ -112,6 +114,25 @@ export default function CampaignDetailPage() {
 
   const actId = meta.selectedAdAccount?.account_id ?? "";
 
+  const submitCampaignAction = async (toolName: string, args: Record<string, unknown>, title: string) => {
+    if (!meta.organizationId) return;
+    setActionBusy(true);
+    try {
+      const result = await submitMetaAction({
+        organizationId: meta.organizationId,
+        toolName,
+        arguments: args,
+        title,
+      });
+      toast.success(metaActionToastMessage(result));
+      await detail.refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao executar ação");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -139,15 +160,42 @@ export default function CampaignDetailPage() {
             <Button variant="ghost" size="sm" className="h-9 gap-1" onClick={() => navigate(-1)}>
               <ArrowLeft className="h-3.5 w-3.5" /> Voltar
             </Button>
-            <Button variant="outline" size="sm" className="h-9 gap-2" onClick={() => toast.info("Escrita na Meta em breve")}>
-              <Copy className="h-3.5 w-3.5" /> Duplicar
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 gap-2"
+              disabled={actionBusy}
+              onClick={() => {
+                const raw = window.prompt("Novo orçamento diário em R$:", String(c!.dailyBudget || ""));
+                if (!raw) return;
+                const dailyBudget = Number(raw.replace(",", "."));
+                if (!Number.isFinite(dailyBudget) || dailyBudget <= 0) return toast.error("Orçamento inválido");
+                void submitCampaignAction(
+                  "meta.update_campaign_budget",
+                  { campaign_id: c!.id, daily_budget_brl: dailyBudget },
+                  `Alterar orçamento de ${c!.name}`,
+                );
+              }}
+            >
+              <DollarSign className="h-3.5 w-3.5" /> Alterar orçamento
             </Button>
             {c!.status === "ACTIVE" ? (
-              <Button variant="outline" size="sm" className="h-9 gap-2" onClick={() => toast.info("Escrita na Meta em breve")}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 gap-2"
+                disabled={actionBusy}
+                onClick={() => void submitCampaignAction("meta.pause_campaign", { campaign_id: c!.id }, `Pausar ${c!.name}`)}
+              >
                 <Pause className="h-3.5 w-3.5" /> Pausar
               </Button>
             ) : (
-              <Button size="sm" className="h-9 gap-2 bg-gradient-brand text-primary-foreground" onClick={() => toast.info("Escrita na Meta em breve")}>
+              <Button
+                size="sm"
+                className="h-9 gap-2 bg-gradient-brand text-primary-foreground"
+                disabled={actionBusy}
+                onClick={() => void submitCampaignAction("meta.activate_campaign", { campaign_id: c!.id }, `Ativar ${c!.name}`)}
+              >
                 <Play className="h-3.5 w-3.5" /> Ativar
               </Button>
             )}
@@ -317,6 +365,40 @@ export default function CampaignDetailPage() {
                   roas: a.roas,
                   dailyBudget: a.dailyBudget,
                   subtitle: `${a.targeting_summary} · otimização: ${goalLabel(a.optimization_goal)}`,
+                  actions: (
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={actionBusy}
+                        onClick={() => {
+                          const raw = window.prompt("Novo orçamento diário do conjunto em R$:", String(a.dailyBudget || ""));
+                          if (!raw) return;
+                          const value = Number(raw.replace(",", "."));
+                          if (!Number.isFinite(value) || value <= 0) return toast.error("Orçamento inválido");
+                          void submitCampaignAction(
+                            "meta.update_adset_budget",
+                            { adset_id: a.id, daily_budget_brl: value },
+                            `Alterar orçamento de ${a.name}`,
+                          );
+                        }}
+                      >
+                        Orçamento
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={actionBusy}
+                        onClick={() => void submitCampaignAction(
+                          a.status === "ACTIVE" ? "meta.pause_adset" : "meta.activate_adset",
+                          { adset_id: a.id },
+                          `${a.status === "ACTIVE" ? "Pausar" : "Ativar"} ${a.name}`,
+                        )}
+                      >
+                        {a.status === "ACTIVE" ? "Pausar" : "Ativar"}
+                      </Button>
+                    </div>
+                  ),
                 }))}
               />
             </Card>
@@ -379,6 +461,20 @@ export default function CampaignDetailPage() {
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted">
                       <ImageIcon className="h-4 w-4 text-muted-foreground" />
                     </div>
+                  ),
+                  actions: (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={actionBusy}
+                      onClick={() => void submitCampaignAction(
+                        a.status === "ACTIVE" ? "meta.pause_ad" : "meta.activate_ad",
+                        { ad_id: a.id },
+                        `${a.status === "ACTIVE" ? "Pausar" : "Ativar"} ${a.name}`,
+                      )}
+                    >
+                      {a.status === "ACTIVE" ? "Pausar" : "Ativar"}
+                    </Button>
                   ),
                 }))}
               />

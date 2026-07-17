@@ -1,201 +1,347 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Copy, Sparkles, ExternalLink, ImageIcon } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Archive, ArrowLeft, Copy, ImageIcon, Link2, Save, Sparkles, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/proads/PageHeader";
-import { MetricCard } from "@/components/proads/MetricCard";
 import { EmptyState } from "@/components/proads/EmptyState";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PlatformBadge } from "@/components/proads/Badges";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  formatCurrency, formatDate, formatMetaCurrency, formatMetaNumber, formatMetaPercent, formatNumber, formatRoas,
-} from "@/lib/format";
-import { periodRange } from "@/lib/dates";
+import { useMetaCreatives, useMetaCampaignDetail, useMetaCampaigns } from "@/hooks/useMetaData";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
-import { useMetaCreatives } from "@/hooks/useMetaData";
-import { DollarSign, Eye, MousePointerClick, Target, Percent, TrendingUp, Users2 } from "lucide-react";
+import {
+  archiveCreative,
+  deleteCreative,
+  duplicateCreative,
+  updateCreative,
+} from "@/lib/creative-library";
+import { supabase } from "@/integrations/supabase/client";
+import { formatDate, formatNumber } from "@/lib/format";
 import { toast } from "sonner";
+import { metaActionToastMessage, submitMetaAction } from "@/lib/meta-actions";
 
 export default function CreativeDetailPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const meta = useMetaIntegration();
-  const [periodKey, setPeriodKey] = useState("30d");
+  const { organizationId } = meta;
+  const query = useMetaCreatives({ includeArchived: true });
+  const campaignQuery = useMetaCampaigns({ status: "all" });
+  const creative = useMemo(() => query.data?.creatives.find((item) => item.id === id), [id, query.data]);
+  const [form, setForm] = useState({
+    name: "",
+    headline: "",
+    primary_text: "",
+    cta: "",
+    destination_url: "",
+    description: "",
+    tags: "",
+    publication_status: "draft",
+  });
+  const [campaignId, setCampaignId] = useState("");
+  const [adsetId, setAdsetId] = useState("");
+  const [pageId, setPageId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const selectedCampaignDetail = useMetaCampaignDetail(campaignId || undefined);
+  const pages = useQuery({
+    queryKey: ["meta-pages-for-creative", meta.connectionId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("meta_assets")
+        .select("id,external_id,name")
+        .eq("connection_id", meta.connectionId!)
+        .eq("asset_type", "page");
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!meta.connectionId,
+  });
 
-  const tz = meta.selectedAdAccount?.timezone || "America/Sao_Paulo";
-  const days = periodKey === "7d" ? 7 : periodKey === "14d" ? 14 : periodKey === "90d" ? 90 : 30;
-  const { dateFrom, dateTo } = useMemo(() => periodRange(days, tz), [days, tz]);
+  useEffect(() => {
+    if (!creative) return;
+    setForm({
+      name: creative.name,
+      headline: creative.headline ?? "",
+      primary_text: creative.primary_text ?? "",
+      cta: creative.cta ?? "",
+      destination_url: creative.destination_url ?? "",
+      description: creative.description ?? "",
+      tags: (creative.tags ?? []).join(", "),
+      publication_status: creative.publication_status,
+    });
+  }, [creative]);
 
-  const query = useMetaCreatives({ dateFrom, dateTo, sync: false });
-  const c = useMemo(
-    () => (query.data?.creatives ?? []).find(
-      (x) => x.id === id || x.db_id === id || x.meta_creative_id === id || `meta_${x.meta_creative_id}` === id,
-    ),
-    [query.data?.creatives, id],
-  );
+  const links = useQuery({
+    queryKey: ["creative-links", organizationId, id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("creative_campaign_links" as any)
+        .select("*")
+        .eq("organization_id", organizationId!)
+        .eq("creative_id", id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!organizationId && !!id,
+  });
 
-  if (query.isLoading && !c) {
-    return <div className="p-8 text-sm text-muted-foreground">Carregando criativo…</div>;
-  }
+  const refresh = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["creative-library"] }),
+      queryClient.invalidateQueries({ queryKey: ["creative-links", organizationId, id] }),
+    ]);
+  };
 
-  if (!c) {
+  if (query.isLoading) return <div className="p-8 text-sm text-muted-foreground">Carregando criativo…</div>;
+  if (!creative) {
     return (
       <div className="space-y-4 p-8">
-        <Button variant="ghost" size="sm" className="gap-1" onClick={() => navigate("/criativos")}>
-          <ArrowLeft className="h-3.5 w-3.5" /> Voltar
-        </Button>
-        <EmptyState
-          icon={ImageIcon}
-          title="Criativo não encontrado"
-          description="Pode ter saído da conta Meta ou ainda não foi sincronizado."
-        />
+        <Button variant="ghost" size="sm" onClick={() => navigate("/criativos")}><ArrowLeft className="h-4 w-4" /> Voltar</Button>
+        <EmptyState icon={ImageIcon} title="Criativo não encontrado" description="Ele pode ter sido excluído da galeria." />
       </div>
     );
   }
 
-  const perf = c.performance ?? {
-    spend: 0, impressions: 0, clicks: 0, leads: 0, ctr: null, cpm: null, cpl: null, cpr: null, roas: null, results: 0,
+  const assetUrl = creative.signed_url || creative.media_url || creative.thumbnail_url;
+
+  const save = async () => {
+    if (!form.name.trim()) return toast.error("Informe um nome");
+    setSaving(true);
+    try {
+      await updateCreative(creative.id, {
+        name: form.name.trim(),
+        headline: form.headline.trim() || null,
+        primary_text: form.primary_text.trim() || null,
+        cta: form.cta.trim() || null,
+        destination_url: form.destination_url.trim() || null,
+        description: form.description.trim() || null,
+        tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+        publication_status: form.publication_status as typeof creative.publication_status,
+      });
+      await refresh();
+      toast.success("Criativo atualizado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao salvar");
+    } finally {
+      setSaving(false);
+    }
   };
-  const actId = meta.selectedAdAccount?.account_id ?? "";
+
+  const linkCampaign = async () => {
+    const campaign = campaignQuery.data?.campaigns.find((item) => item.id === campaignId);
+    const adset = selectedCampaignDetail.data?.adsets.find((item) => item.id === adsetId);
+    if (!campaign || !adset || !organizationId || !pageId) {
+      return toast.error("Selecione campanha, conjunto e Página");
+    }
+    if (!/^https?:\/\//i.test(form.destination_url)) return toast.error("Informe e salve uma URL de destino válida");
+    try {
+      const result = await submitMetaAction({
+        organizationId,
+        toolName: "meta.publish_creative_paused",
+        title: `Criar anúncio pausado com ${creative.name}`,
+        arguments: {
+          creative_id: creative.id,
+          campaign_id: campaign.id,
+          campaign_name: campaign.name,
+          adset_id: adset.id,
+          adset_name: adset.name,
+          page_id: pageId,
+          destination_url: form.destination_url,
+          cta: form.cta || "LEARN_MORE",
+          headline: form.headline,
+          primary_text: form.primary_text,
+        },
+      });
+      await refresh();
+      toast.success(metaActionToastMessage(result));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao vincular");
+    }
+  };
 
   return (
     <>
       <PageHeader
-        title={c.name}
-        description={
-          <span className="inline-flex flex-wrap items-center gap-2">
-            {c.source === "meta" ? <PlatformBadge platform="meta" /> : (
-              <Badge className="gap-1 bg-gradient-brand text-white"><Sparkles className="h-3 w-3" /> IA</Badge>
-            )}
-            <Badge variant="outline">{c.status === "in_use" ? "Em uso" : c.status === "used" ? "Usado" : c.status}</Badge>
-            <span>{c.format || c.type}</span>
-            {c.source === "meta" && (
-              <span>· {c.active_ads_count}/{c.ads_count} anúncios ativos</span>
-            )}
-          </span>
-        }
+        title={creative.name}
+        description="Edite a copy, organize tags e atrele este ativo a campanhas."
         actions={
           <>
-            <Select value={periodKey} onValueChange={setPeriodKey}>
-              <SelectTrigger className="h-9 w-[140px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="7d">7 dias</SelectItem>
-                <SelectItem value="14d">14 dias</SelectItem>
-                <SelectItem value="30d">30 dias</SelectItem>
-                <SelectItem value="90d">90 dias</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-              <ArrowLeft className="h-3.5 w-3.5" /> Voltar
+            <Button variant="ghost" size="sm" onClick={() => navigate("/criativos")}><ArrowLeft className="h-4 w-4" /> Voltar</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={async () => {
+                try {
+                  const copy = await duplicateCreative(creative);
+                  await refresh();
+                  toast.success("Criativo duplicado");
+                  navigate(`/criativos/${copy.id}`);
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Falha ao duplicar");
+                }
+              }}
+            >
+              <Copy className="h-4 w-4" /> Duplicar
             </Button>
-            <Button variant="outline" size="sm" className="gap-2" onClick={() => toast.info("Em breve")}>
-              <Copy className="h-3.5 w-3.5" /> Duplicar
+            <Button size="sm" className="gap-2 bg-gradient-brand text-primary-foreground" disabled={saving} onClick={save}>
+              <Save className="h-4 w-4" /> {saving ? "Salvando…" : "Salvar"}
             </Button>
-            <Button size="sm" className="gap-2 bg-gradient-brand text-primary-foreground" onClick={() => navigate("/agente")}>
-              <Sparkles className="h-3.5 w-3.5" /> Criar variação
-            </Button>
-            {c.meta_creative_id && (
-              <Button variant="ghost" size="icon" className="h-9 w-9" asChild>
-                <a
-                  href={`https://www.facebook.com/adsmanager/manage/ads?act=${actId}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </a>
-              </Button>
-            )}
           </>
         }
       />
 
-      <div className="space-y-6 p-4 md:p-8">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-          <MetricCard label="Investimento" value={formatCurrency(perf.spend)} icon={DollarSign} />
-          <MetricCard label="Impressões" value={formatNumber(perf.impressions)} icon={Eye} tone="accent" />
-          <MetricCard label="Cliques" value={formatNumber(perf.clicks)} icon={MousePointerClick} />
-          <MetricCard label="CTR" value={formatMetaPercent(perf.ctr)} icon={Percent} tone="success" />
-          <MetricCard label="CPM" value={formatMetaCurrency(perf.cpm)} icon={TrendingUp} />
-          <MetricCard label="Leads" value={formatNumber(perf.leads)} icon={Users2} />
-          <MetricCard label="CPL" value={formatMetaCurrency(perf.cpl)} icon={Target} tone="accent" />
-          <MetricCard label="CPR" value={formatMetaCurrency(perf.cpr)} icon={Target} tone="warning" />
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-3">
-          <Card className="overflow-hidden shadow-card md:col-span-2">
-            {c.thumbnail_url || c.media_url ? (
-              <img src={c.media_url || c.thumbnail_url || ""} alt={c.name} className="w-full bg-muted object-contain" />
+      <div className="grid gap-6 p-4 lg:grid-cols-3 md:p-8">
+        <div className="space-y-4 lg:col-span-2">
+          <Card className="overflow-hidden shadow-card">
+            {assetUrl ? (
+              creative.type === "video" ? (
+                <video src={assetUrl} controls className="max-h-[560px] w-full bg-black object-contain" />
+              ) : (
+                <img src={assetUrl} alt={creative.name} className="max-h-[560px] w-full bg-muted object-contain" />
+              )
             ) : (
-              <div className="flex aspect-video items-center justify-center bg-muted">
-                <ImageIcon className="h-10 w-10 text-muted-foreground" />
-              </div>
+              <div className="flex aspect-video items-center justify-center bg-muted"><ImageIcon className="h-12 w-12 text-muted-foreground" /></div>
             )}
           </Card>
-          <div className="space-y-4">
-            <Card className="p-4 shadow-card">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Informações</p>
-              <div className="mt-3 space-y-2 text-sm">
-                <div className="flex justify-between gap-2">
-                  <span className="text-muted-foreground">Origem</span>
-                  <span className="font-medium">{c.source === "meta" ? "Meta Ads" : c.source === "ai" ? "Gerado por IA" : "Upload"}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-muted-foreground">Tipo</span>
-                  <span className="capitalize">{c.type}</span>
-                </div>
-                {c.meta_creative_id && (
-                  <div className="flex justify-between gap-2">
-                    <span className="text-muted-foreground">ID Meta</span>
-                    <span className="truncate font-mono text-[11px]">{c.meta_creative_id}</span>
-                  </div>
-                )}
-                {c.created_at && (
-                  <div className="flex justify-between gap-2">
-                    <span className="text-muted-foreground">Criado</span>
-                    <span>{formatDate(c.created_at)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between gap-2">
-                  <span className="text-muted-foreground">Anúncios</span>
-                  <span>{c.active_ads_count} ativos / {c.ads_count} total</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-muted-foreground">ROAS</span>
-                  <span>{formatRoas(perf.roas)}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-muted-foreground">Resultados</span>
-                  <span>{formatMetaNumber(perf.results)}</span>
-                </div>
-              </div>
-            </Card>
 
-            {(c.headline || c.primary_text || c.cta) && (
-              <Card className="p-4 shadow-card">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Textos do anúncio</p>
-                <div className="mt-3 space-y-2 text-sm">
-                  {c.headline && <div><span className="text-muted-foreground">Título:</span> <strong>{c.headline}</strong></div>}
-                  {c.primary_text && <div><span className="text-muted-foreground">Texto:</span> {c.primary_text}</div>}
-                  {c.cta && <div><span className="text-muted-foreground">CTA:</span> <Badge variant="outline">{c.cta}</Badge></div>}
-                </div>
-              </Card>
-            )}
+          <Card className="p-5 shadow-card">
+            <h2 className="font-display font-bold">Informações e copy</h2>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <Field label="Nome"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+              <Field label="Estado">
+                <Select value={form.publication_status} onValueChange={(value) => setForm({ ...form, publication_status: value })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Rascunho</SelectItem>
+                    <SelectItem value="ready">Pronto para publicar</SelectItem>
+                    <SelectItem value="published">Publicado</SelectItem>
+                    <SelectItem value="failed">Falhou</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Título"><Input value={form.headline} onChange={(e) => setForm({ ...form, headline: e.target.value })} /></Field>
+              <Field label="CTA"><Input value={form.cta} onChange={(e) => setForm({ ...form, cta: e.target.value.toUpperCase() })} /></Field>
+              <Field label="Texto principal" className="md:col-span-2">
+                <Textarea className="min-h-28" value={form.primary_text} onChange={(e) => setForm({ ...form, primary_text: e.target.value })} />
+              </Field>
+              <Field label="URL de destino"><Input type="url" value={form.destination_url} onChange={(e) => setForm({ ...form, destination_url: e.target.value })} /></Field>
+              <Field label="Tags"><Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></Field>
+              <Field label="Observações" className="md:col-span-2">
+                <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+              </Field>
+            </div>
+          </Card>
+        </div>
 
-            {c.ad_names && c.ad_names.length > 0 && (
-              <Card className="p-4 shadow-card">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Anúncios vinculados</p>
-                <ul className="mt-2 space-y-1 text-sm">
-                  {c.ad_names.map((n) => (
-                    <li key={n} className="truncate text-muted-foreground">• {n}</li>
-                  ))}
-                </ul>
-              </Card>
-            )}
-          </div>
+        <div className="space-y-4">
+          <Card className="p-5 shadow-card">
+            <div className="flex items-center gap-2"><Link2 className="h-4 w-4 text-primary" /><h2 className="font-display font-bold">Usar em campanha</h2></div>
+            <p className="mt-1 text-xs text-muted-foreground">O vínculo organiza a galeria. A publicação sempre criará um anúncio pausado.</p>
+            <Select value={campaignId} onValueChange={(value) => {
+              setCampaignId(value);
+              setAdsetId("");
+            }}>
+              <SelectTrigger className="mt-4"><SelectValue placeholder="Selecione a campanha" /></SelectTrigger>
+              <SelectContent>
+                {(campaignQuery.data?.campaigns ?? []).map((campaign) => (
+                  <SelectItem key={campaign.id} value={campaign.id}>{campaign.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={adsetId} onValueChange={setAdsetId}>
+              <SelectTrigger className="mt-3"><SelectValue placeholder="Selecione o conjunto" /></SelectTrigger>
+              <SelectContent>
+                {(selectedCampaignDetail.data?.adsets ?? []).map((adset) => (
+                  <SelectItem key={adset.id} value={adset.id}>{adset.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={pageId} onValueChange={setPageId}>
+              <SelectTrigger className="mt-3"><SelectValue placeholder="Selecione a Página" /></SelectTrigger>
+              <SelectContent>
+                {(pages.data ?? []).map((page) => (
+                  <SelectItem key={page.id} value={page.external_id}>{page.name || page.external_id}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button className="mt-3 w-full gap-2" variant="outline" onClick={linkCampaign}>
+              <Link2 className="h-4 w-4" /> Criar anúncio pausado
+            </Button>
+          </Card>
+
+          <Card className="p-5 shadow-card">
+            <h2 className="font-display font-bold">Vínculos</h2>
+            <div className="mt-3 space-y-2">
+              {(links.data ?? []).length === 0 ? (
+                <p className="text-xs text-muted-foreground">Ainda não vinculado.</p>
+              ) : (links.data as Array<{
+                id: string;
+                campaign_name: string | null;
+                campaign_external_id: string;
+                adset_name: string | null;
+                publication_status: string;
+              }> ?? []).map((link) => (
+                <div key={link.id} className="rounded-md border border-border p-3 text-xs">
+                  <p className="font-semibold">{link.campaign_name || link.campaign_external_id}</p>
+                  <p className="mt-1 text-muted-foreground">{link.adset_name || "Conjunto ainda não escolhido"} · {link.publication_status}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-5 text-sm shadow-card">
+            <div className="space-y-2">
+              <Info label="Origem" value={creative.source === "ai" ? "Agente IA" : "Upload"} />
+              <Info label="Tipo" value={creative.type === "video" ? "Vídeo" : "Imagem"} />
+              <Info label="Tamanho" value={creative.file_size ? `${formatNumber(Math.round(creative.file_size / 1024))} KB` : "—"} />
+              <Info label="Atualizado" value={formatDate(creative.updated_at)} />
+            </div>
+            <Button variant="outline" className="mt-4 w-full gap-2" onClick={() => navigate("/agente")}>
+              <Sparkles className="h-4 w-4" /> Gerar variação
+            </Button>
+            <Button
+              variant="ghost"
+              className="mt-2 w-full gap-2"
+              onClick={async () => {
+                await archiveCreative(creative.id, !creative.archived_at);
+                await refresh();
+                toast.success(creative.archived_at ? "Criativo restaurado" : "Criativo arquivado");
+              }}
+            >
+              <Archive className="h-4 w-4" /> {creative.archived_at ? "Restaurar" : "Arquivar"}
+            </Button>
+            <Button
+              variant="ghost"
+              className="mt-1 w-full gap-2 text-destructive hover:text-destructive"
+              onClick={async () => {
+                if (!window.confirm("Excluir este criativo permanentemente?")) return;
+                await deleteCreative(creative);
+                await refresh();
+                toast.success("Criativo excluído");
+                navigate("/criativos");
+              }}
+            >
+              <Trash2 className="h-4 w-4" /> Excluir
+            </Button>
+          </Card>
         </div>
       </div>
     </>
   );
+}
+
+function Field({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
+  return <div className={className}><Label className="mb-1.5 block">{label}</Label>{children}</div>;
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return <div className="flex justify-between gap-3"><span className="text-muted-foreground">{label}</span><span className="text-right font-medium">{value}</span></div>;
 }

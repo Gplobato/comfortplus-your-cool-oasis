@@ -17,6 +17,7 @@ import {
   periodLabel,
   safeNum,
   shiftYmd,
+  sumActionValues,
   ymdInTz,
 } from "../_shared/meta-normalize.ts";
 
@@ -40,9 +41,16 @@ function summarizeRow(row: any | null | undefined) {
   const conversions = extractConversionCount(row.actions);
   const linkClicks = extractLinkClicks(row.actions);
   const revenue = extractPurchaseValue(row.action_values);
-  const { results, result_type } = extractResults(row.actions, null);
+  const { results, result_type } = extractResults(row.actions, null, {
+    linkClicks: linkClicks || (safeNum(row.inline_link_clicks) ?? 0),
+    videoViews:
+      sumActionValues(row.video_thruplay_watched_actions) ||
+      sumActionValues(row.video_play_actions),
+  });
   const roas = extractRoas(row.purchase_roas) ??
     (spend !== null && spend > 0 && revenue > 0 ? revenue / spend : null);
+  const cpl = extractCostPerLead(row.cost_per_action_type, spend, leads);
+  const cpr = extractCostPerResult(row.cost_per_action_type, spend, results, result_type);
   return {
     spend: spend ?? 0,
     impressions: safeNum(row.impressions) ?? 0,
@@ -56,16 +64,22 @@ function summarizeRow(row: any | null | undefined) {
     cpp: safeNum(row.cpp),
     frequency: safeNum(row.frequency),
     leads,
-    cpl: extractCostPerLead(row.cost_per_action_type, spend, leads),
+    cpl,
     conversions,
     cost_per_conversion:
       conversions > 0 && spend !== null ? spend / conversions : null,
     results,
     result_type,
-    cpr: extractCostPerResult(row.cost_per_action_type, spend, results, result_type),
+    cpr,
     revenue,
     roas,
     active_campaigns: 0,
+    metric_availability: {
+      cpl: leads > 0 && cpl !== null,
+      cpr: results > 0 && result_type !== "unknown" && cpr !== null,
+      roas: revenue > 0 && roas !== null,
+      result: result_type !== "unknown",
+    },
   };
 }
 
@@ -170,7 +184,9 @@ Deno.serve(async (req) => {
       const spend = safeNum(row.spend);
       const leads = extractLeadCount(row.actions);
       const linkClicks = extractLinkClicks(row.actions);
-      const { results, result_type } = extractResults(row.actions, null);
+      const { results, result_type } = extractResults(row.actions, null, {
+        linkClicks: linkClicks,
+      });
       return {
         date: row.date_start,
         spend: spend ?? 0,
@@ -295,5 +311,11 @@ function emptySummary() {
     revenue: 0,
     roas: null as number | null,
     active_campaigns: 0,
+    metric_availability: {
+      cpl: false,
+      cpr: false,
+      roas: false,
+      result: false,
+    },
   };
 }

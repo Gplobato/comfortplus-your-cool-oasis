@@ -1,280 +1,270 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Sparkles, Wand2, Check } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, Check, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/proads/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
+import { useMetaCreatives } from "@/hooks/useMetaData";
+import { supabase } from "@/integrations/supabase/client";
+import { metaActionToastMessage, submitMetaAction } from "@/lib/meta-actions";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 
-const steps = [
-  "Plataforma",
-  "Objetivo",
-  "Configuração",
-  "Público",
-  "Orçamento",
-  "Criativos",
-  "Rastreamento",
-  "Revisão",
-];
+const OBJECTIVES = [
+  ["OUTCOME_TRAFFIC", "Tráfego"],
+  ["OUTCOME_LEADS", "Leads"],
+  ["OUTCOME_SALES", "Vendas"],
+  ["OUTCOME_ENGAGEMENT", "Engajamento"],
+  ["OUTCOME_AWARENESS", "Reconhecimento"],
+] as const;
+
+function objectiveConfig(objective: string, pageId: string, pixelId: string) {
+  if (objective === "OUTCOME_LEADS") {
+    return { optimization_goal: "LEAD_GENERATION", promoted_object: pageId ? { page_id: pageId } : undefined };
+  }
+  if (objective === "OUTCOME_SALES") {
+    return {
+      optimization_goal: "OFFSITE_CONVERSIONS",
+      promoted_object: pixelId ? { pixel_id: pixelId, custom_event_type: "PURCHASE" } : undefined,
+    };
+  }
+  if (objective === "OUTCOME_ENGAGEMENT") return { optimization_goal: "POST_ENGAGEMENT" };
+  if (objective === "OUTCOME_AWARENESS") return { optimization_goal: "REACH" };
+  return { optimization_goal: "LINK_CLICKS" };
+}
 
 export default function NewCampaignPage() {
-  const [params] = useSearchParams();
   const navigate = useNavigate();
-  const isAI = params.get("ai") === "1";
-  const [mode, setMode] = useState<"choose" | "manual" | "ai">(isAI ? "ai" : "choose");
-  const [step, setStep] = useState(0);
+  const [params] = useSearchParams();
+  const meta = useMetaIntegration();
+  const gallery = useMetaCreatives();
+  const [name, setName] = useState("");
+  const [objective, setObjective] = useState("OUTCOME_TRAFFIC");
+  const [adsetName, setAdsetName] = useState("");
+  const [country, setCountry] = useState("BR");
+  const [ageMin, setAgeMin] = useState("18");
+  const [ageMax, setAgeMax] = useState("65");
+  const [dailyBudget, setDailyBudget] = useState("");
+  const [pageId, setPageId] = useState("");
+  const [pixelId, setPixelId] = useState("");
+  const [creativeId, setCreativeId] = useState("");
+  const [destinationUrl, setDestinationUrl] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  if (mode === "choose") {
-    return (
-      <>
-        <PageHeader title="Nova campanha" description="Escolha como deseja criar sua campanha." />
-        <div className="grid gap-4 p-4 md:grid-cols-2 md:p-8">
-          <Card className="group cursor-pointer p-6 shadow-card transition-shadow hover:shadow-brand" onClick={() => setMode("manual")}>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-soft text-blue-soft-foreground">
-              <Wand2 className="h-5 w-5" />
-            </div>
-            <h3 className="mt-4 font-display text-xl font-bold">Criar manualmente</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Passo a passo tradicional para configurar cada detalhe da campanha.
-            </p>
-            <Button variant="ghost" size="sm" className="mt-4 gap-1 p-0 text-primary">
-              Começar <ArrowRight className="h-3 w-3" />
-            </Button>
-          </Card>
+  const assets = useQuery({
+    queryKey: ["meta-assets-for-campaign", meta.connectionId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("meta_assets")
+        .select("id,asset_type,external_id,name,metadata_sanitized")
+        .eq("connection_id", meta.connectionId!);
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!meta.connectionId,
+  });
+  const pages = useMemo(() => (assets.data ?? []).filter((asset) => asset.asset_type === "page"), [assets.data]);
+  const pixels = useMemo(() => (assets.data ?? []).filter((asset) => asset.asset_type === "pixel"), [assets.data]);
+  const selectedCreative = gallery.data?.creatives.find((creative) => creative.id === creativeId);
 
-          <Card className="group cursor-pointer overflow-hidden p-6 shadow-card transition-shadow hover:shadow-brand" onClick={() => setMode("ai")}>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-brand text-white">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <h3 className="mt-4 font-display text-xl font-bold">Criar com inteligência artificial</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Descreva seu objetivo em linguagem natural e a IA monta a campanha completa como rascunho.
-            </p>
-            <Button size="sm" className="mt-4 gap-1 bg-gradient-brand text-primary-foreground">
-              Conversar com IA <ArrowRight className="h-3 w-3" />
-            </Button>
-          </Card>
-        </div>
-      </>
-    );
-  }
+  const create = async () => {
+    if (!meta.organizationId || !meta.selectedAdAccount) return toast.error("Conecte e selecione uma conta Meta");
+    const budget = Number(dailyBudget.replace(",", "."));
+    if (!name.trim() || !adsetName.trim()) return toast.error("Preencha os nomes da campanha e do conjunto");
+    if (!Number.isFinite(budget) || budget <= 0) return toast.error("Informe um orçamento diário válido");
+    if (creativeId && !pageId) return toast.error("Selecione a Página para publicar o criativo");
+    if (creativeId && !/^https?:\/\//i.test(destinationUrl || selectedCreative?.destination_url || "")) {
+      return toast.error("Informe uma URL de destino válida");
+    }
+    if (objective === "OUTCOME_SALES" && !pixelId) return toast.error("Selecione um Pixel para campanhas de vendas");
 
-  if (mode === "ai") {
-    return (
-      <>
-        <PageHeader
-          title="Criar campanha com IA"
-          description="Responda perguntas rápidas e a IA vai propor uma campanha completa."
-          actions={
-            <Button variant="ghost" size="sm" className="h-9 gap-1" onClick={() => navigate("/campanhas")}>
-              <ArrowLeft className="h-3.5 w-3.5" /> Voltar
-            </Button>
-          }
-        />
-        <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-8">
-          {[
-            { label: "Qual serviço será anunciado?", ph: "Ex: Monitoramento de obras com IA" },
-            { label: "Qual público?", ph: "Ex: Gerentes de obra 28-55 anos" },
-            { label: "Qual região?", ph: "Ex: São Paulo capital + Grande SP" },
-            { label: "Qual orçamento?", ph: "Ex: R$ 150/dia" },
-            { label: "Qual objetivo?", ph: "Leads / Conversões / Tráfego" },
-            { label: "Qual landing page?", ph: "https://promonitor.com.br/lp" },
-            { label: "Quais materiais podem ser usados?", ph: "Fotos, vídeos, logos, cases..." },
-          ].map((q) => (
-            <Card key={q.label} className="p-4 shadow-card">
-              <Label className="text-sm font-semibold">{q.label}</Label>
-              <Textarea placeholder={q.ph} className="mt-2 min-h-[70px] bg-secondary/40" />
-            </Card>
-          ))}
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setMode("choose")}>Cancelar</Button>
-            <Button
-              className="gap-2 bg-gradient-brand text-primary-foreground shadow-brand"
-              onClick={() => {
-                toast.success("Proposta gerada — abrindo revisão");
-                setMode("manual");
-                setStep(steps.length - 1);
-              }}
-            >
-              <Sparkles className="h-4 w-4" /> Gerar proposta
-            </Button>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  const pct = ((step + 1) / steps.length) * 100;
+    setSaving(true);
+    try {
+      const config = objectiveConfig(objective, pageId, pixelId);
+      const result = await submitMetaAction({
+        organizationId: meta.organizationId,
+        toolName: "meta.create_campaign_structure",
+        title: `Criar estrutura pausada: ${name.trim()}`,
+        arguments: {
+          campaign: {
+            name: name.trim(),
+            objective,
+            buying_type: "AUCTION",
+            special_ad_categories: [],
+          },
+          adset: {
+            name: adsetName.trim(),
+            billing_event: "IMPRESSIONS",
+            optimization_goal: config.optimization_goal,
+            promoted_object: config.promoted_object,
+            daily_budget_brl: budget,
+            targeting: {
+              geo_locations: { countries: [country.toUpperCase()] },
+              age_min: Number(ageMin),
+              age_max: Number(ageMax),
+            },
+          },
+        },
+      });
+      if (result.status === "awaiting_approval") {
+        toast.success(metaActionToastMessage(result));
+        navigate("/aprovacoes");
+        return;
+      }
+      const payload = result.result as {
+        partial_failure?: boolean;
+        error?: string;
+        campaign?: { campaign_id?: string };
+        adset?: { adset_id?: string };
+      } | undefined;
+      if (payload?.partial_failure) {
+        toast.warning("A campanha foi criada pausada, mas o conjunto falhou", { description: payload.error });
+        navigate("/campanhas");
+        return;
+      }
+      const campaignId = payload?.campaign?.campaign_id;
+      const adsetId = payload?.adset?.adset_id;
+      if (creativeId && campaignId && adsetId) {
+        await submitMetaAction({
+          organizationId: meta.organizationId,
+          toolName: "meta.publish_creative_paused",
+          title: `Criar anúncio pausado: ${selectedCreative?.name}`,
+          arguments: {
+            creative_id: creativeId,
+            campaign_id: campaignId,
+            campaign_name: name.trim(),
+            adset_id: adsetId,
+            adset_name: adsetName.trim(),
+            page_id: pageId,
+            destination_url: destinationUrl || selectedCreative?.destination_url,
+            cta: selectedCreative?.cta || "LEARN_MORE",
+          },
+        });
+      }
+      toast.success("Campanha, conjunto e anúncio criados pausados na Meta");
+      navigate(`/campanhas/${campaignId || ""}`);
+    } catch (error) {
+      toast.error("Não foi possível criar a estrutura", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <>
       <PageHeader
-        title="Nova campanha"
-        description={`Etapa ${step + 1} de ${steps.length} — ${steps[step]}`}
-        actions={
-          <Button variant="ghost" size="sm" className="h-9 gap-1" onClick={() => setMode("choose")}>
-            <ArrowLeft className="h-3.5 w-3.5" /> Trocar modo
-          </Button>
-        }
+        title="Nova campanha Meta"
+        description="A estrutura será criada de verdade, sempre pausada e pronta para revisão."
+        actions={<Button variant="ghost" size="sm" onClick={() => navigate("/campanhas")}><ArrowLeft className="h-4 w-4" /> Voltar</Button>}
       />
+      <div className="mx-auto max-w-5xl space-y-5 p-4 md:p-8">
+        {params.get("ai") === "1" && (
+          <Alert>
+            <Sparkles className="h-4 w-4" />
+            <AlertTitle>Rascunho assistido por IA</AlertTitle>
+            <AlertDescription>Revise todos os campos. A política do servidor impedirá publicação ativa.</AlertDescription>
+          </Alert>
+        )}
+        {!meta.connected || !meta.selectedAdAccount ? (
+          <Alert variant="destructive">
+            <AlertTitle>Meta não conectada</AlertTitle>
+            <AlertDescription>Conecte e selecione uma conta de anúncios antes de criar uma campanha.</AlertDescription>
+          </Alert>
+        ) : (
+          <Alert>
+            <Check className="h-4 w-4" />
+            <AlertTitle>{meta.selectedAdAccount.name}</AlertTitle>
+            <AlertDescription>Conta real selecionada · criação com status PAUSED.</AlertDescription>
+          </Alert>
+        )}
 
-      <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-8">
-        <div>
-          <Progress value={pct} className="h-1.5" />
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {steps.map((s, i) => (
-              <button
-                key={s}
-                onClick={() => setStep(i)}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
-                  i === step
-                    ? "border-primary bg-gradient-brand-soft text-primary"
-                    : i < step
-                    ? "border-success/30 bg-success-soft text-success"
-                    : "border-border bg-card text-muted-foreground",
-                )}
-              >
-                {i < step && <Check className="h-3 w-3" />}
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Card className="p-5 shadow-card">
+            <h2 className="font-display font-bold">Campanha</h2>
+            <div className="mt-4 space-y-4">
+              <Field label="Nome da campanha"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Leads SP · julho" /></Field>
+              <Field label="Objetivo">
+                <Select value={objective} onValueChange={setObjective}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{OBJECTIVES.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+                </Select>
+              </Field>
+              <Field label="Nome do conjunto"><Input value={adsetName} onChange={(e) => setAdsetName(e.target.value)} placeholder="Ex: Público amplo · SP" /></Field>
+              <Field label="Orçamento diário (R$)"><Input inputMode="decimal" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} placeholder="150,00" /></Field>
+            </div>
+          </Card>
 
-        <Card className="p-6 shadow-card">
-          {step === 0 && (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {["Meta Ads", "Google Ads", "TikTok Ads", "LinkedIn"].map((p) => (
-                <button
-                  key={p}
-                  className="flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-sm font-medium transition-colors hover:border-primary hover:bg-gradient-brand-soft"
-                >
-                  <span className="text-lg">{p[0]}</span>
-                  {p}
-                </button>
-              ))}
-            </div>
-          )}
-          {step === 1 && (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-              {["Leads", "Conversões", "Tráfego", "Reconhecimento", "Engajamento", "Vendas"].map((o) => (
-                <button key={o} className="rounded-lg border border-border p-4 text-sm font-medium hover:border-primary hover:bg-gradient-brand-soft">
-                  {o}
-                </button>
-              ))}
-            </div>
-          )}
-          {step === 2 && (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <Label>Nome da campanha</Label>
-                <Input className="mt-1.5" placeholder="Ex: Monitoramento SP — jul" />
+          <Card className="p-5 shadow-card">
+            <h2 className="font-display font-bold">Público e rastreamento</h2>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Field label="País"><Input value={country} onChange={(e) => setCountry(e.target.value.toUpperCase())} maxLength={2} /></Field>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Idade mín."><Input type="number" value={ageMin} onChange={(e) => setAgeMin(e.target.value)} /></Field>
+                <Field label="Idade máx."><Input type="number" value={ageMax} onChange={(e) => setAgeMax(e.target.value)} /></Field>
               </div>
-              <div>
-                <Label>Conta de anúncio</Label>
-                <Select><SelectTrigger className="mt-1.5"><SelectValue placeholder="Selecionar" /></SelectTrigger>
+              <Field label="Página" className="sm:col-span-2">
+                <Select value={pageId} onValueChange={setPageId}>
+                  <SelectTrigger><SelectValue placeholder="Selecione uma Página" /></SelectTrigger>
+                  <SelectContent>{pages.map((page) => <SelectItem key={page.id} value={page.external_id}>{page.name || page.external_id}</SelectItem>)}</SelectContent>
+                </Select>
+              </Field>
+              {objective === "OUTCOME_SALES" && (
+                <Field label="Pixel" className="sm:col-span-2">
+                  <Select value={pixelId} onValueChange={setPixelId}>
+                    <SelectTrigger><SelectValue placeholder="Selecione o Pixel" /></SelectTrigger>
+                    <SelectContent>{pixels.map((pixel) => <SelectItem key={pixel.id} value={pixel.external_id}>{pixel.name || pixel.external_id}</SelectItem>)}</SelectContent>
+                  </Select>
+                </Field>
+              )}
+            </div>
+          </Card>
+
+          <Card className="p-5 shadow-card lg:col-span-2">
+            <h2 className="font-display font-bold">Criativo da galeria</h2>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <Field label="Criativo">
+                <Select value={creativeId || "none"} onValueChange={(value) => {
+                  const next = value === "none" ? "" : value;
+                  setCreativeId(next);
+                  const creative = gallery.data?.creatives.find((item) => item.id === next);
+                  if (creative?.destination_url) setDestinationUrl(creative.destination_url);
+                }}>
+                  <SelectTrigger><SelectValue placeholder="Sem anúncio agora" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="1">ProMonitor — Meta BR</SelectItem>
-                    <SelectItem value="2">ProMonitor — Google Ads</SelectItem>
+                    <SelectItem value="none">Criar somente campanha e conjunto</SelectItem>
+                    {(gallery.data?.creatives ?? []).map((creative) => <SelectItem key={creative.id} value={creative.id}>{creative.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
+              <Field label="URL de destino"><Input type="url" value={destinationUrl} onChange={(e) => setDestinationUrl(e.target.value)} placeholder="https://..." /></Field>
             </div>
-          )}
-          {step === 3 && (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <Label>Localização</Label>
-                <Input className="mt-1.5" placeholder="Ex: São Paulo (SP)" />
-              </div>
-              <div>
-                <Label>Idade</Label>
-                <Input className="mt-1.5" placeholder="28 - 55" />
-              </div>
-              <div className="md:col-span-2">
-                <Label>Interesses</Label>
-                <Input className="mt-1.5" placeholder="construção, engenharia, obras..." />
-              </div>
-            </div>
-          )}
-          {step === 4 && (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <Label>Orçamento diário</Label>
-                <Input className="mt-1.5" placeholder="R$ 150,00" />
-              </div>
-              <div>
-                <Label>Data de início</Label>
-                <Input type="date" className="mt-1.5" />
-              </div>
-            </div>
-          )}
-          {step === 5 && (
-            <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-              Selecione criativos da biblioteca ou gere com IA.
-            </div>
-          )}
-          {step === 6 && (
-            <div className="space-y-3">
-              <div><Label>Pixel / GTM</Label><Input className="mt-1.5" placeholder="GTM-XXXXXX" /></div>
-              <div><Label>URL de destino</Label><Input className="mt-1.5" placeholder="https://..." /></div>
-            </div>
-          )}
-          {step === 7 && (
-            <div className="space-y-4">
-              <Alert>
-                <AlertTitle className="text-sm">Rascunho pausado</AlertTitle>
-                <AlertDescription className="text-xs">
-                  Esta campanha será criada como rascunho e permanecerá <strong>pausada</strong> até ser aprovada.
-                </AlertDescription>
-              </Alert>
-              <div className="grid gap-3 rounded-lg border border-border bg-secondary/30 p-4 text-sm md:grid-cols-2">
-                <div><span className="text-muted-foreground">Plataforma:</span> <strong>Meta Ads</strong></div>
-                <div><span className="text-muted-foreground">Objetivo:</span> <strong>Leads</strong></div>
-                <div><span className="text-muted-foreground">Orçamento diário:</span> <strong>R$ 150,00</strong></div>
-                <div><span className="text-muted-foreground">Duração:</span> <strong>30 dias</strong></div>
-                <div><span className="text-muted-foreground">Público:</span> <strong>Gerentes de obra — SP</strong></div>
-                <div><span className="text-muted-foreground">Criativos:</span> <strong>3 selecionados</strong></div>
-              </div>
-            </div>
-          )}
-        </Card>
+          </Card>
+        </div>
 
-        <div className="flex justify-between">
-          <Button variant="outline" disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>
-            Voltar
+        <Alert>
+          <AlertTitle>Proteção de veiculação</AlertTitle>
+          <AlertDescription>
+            Campanha, conjunto e anúncio serão criados com status PAUSED. Ativação e orçamento posterior passam por Aprovações.
+          </AlertDescription>
+        </Alert>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => navigate("/campanhas")}>Cancelar</Button>
+          <Button className="gap-2 bg-gradient-brand text-primary-foreground" disabled={saving || !meta.connected} onClick={() => void create()}>
+            <Check className="h-4 w-4" /> {saving ? "Criando na Meta…" : "Criar estrutura pausada"}
           </Button>
-          {step < steps.length - 1 ? (
-            <Button className="gap-2 bg-gradient-brand text-primary-foreground shadow-brand" onClick={() => setStep((s) => s + 1)}>
-              Continuar <ArrowRight className="h-4 w-4" />
-            </Button>
-          ) : (
-            <Button
-              className="gap-2 bg-gradient-brand text-primary-foreground shadow-brand"
-              onClick={() => {
-                toast.success("Campanha criada como rascunho pausado");
-                navigate("/campanhas");
-              }}
-            >
-              <Check className="h-4 w-4" /> Criar como rascunho
-            </Button>
-          )}
         </div>
       </div>
     </>
   );
+}
+
+function Field({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
+  return <div className={className}><Label className="mb-1.5 block">{label}</Label>{children}</div>;
 }

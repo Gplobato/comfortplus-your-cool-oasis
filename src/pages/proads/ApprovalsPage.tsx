@@ -26,6 +26,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { formatDateTime } from "@/lib/format";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { executeMetaProposal } from "@/lib/meta-actions";
 
 type Proposal = Database["public"]["Tables"]["action_proposals"]["Row"];
 type Risk = Database["public"]["Enums"]["risk_level"];
@@ -56,6 +57,7 @@ export default function ApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState("all");
   const [riskFilter, setRiskFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("awaiting_approval");
   const [active, setActive] = useState<Proposal | null>(null);
   const [action, setAction] = useState<"approve" | "reject" | null>(null);
   const [note, setNote] = useState("");
@@ -72,7 +74,7 @@ export default function ApprovalsPage() {
       .from("action_proposals")
       .select("*")
       .eq("organization_id", activeOrg.id)
-      .eq("status", "awaiting_approval")
+      .in("status", ["awaiting_approval", "approved", "executing", "completed", "failed", "partially_completed"])
       .order("created_at", { ascending: false });
     if (error) {
       toast.error("Falha ao carregar aprovações", { description: error.message });
@@ -91,9 +93,31 @@ export default function ApprovalsPage() {
     return items.filter((p) => {
       if (typeFilter !== "all" && !p.action_type.includes(typeFilter)) return false;
       if (riskFilter !== "all" && p.risk_level !== riskFilter) return false;
+      if (statusFilter !== "all" && p.status !== statusFilter) return false;
       return true;
     });
-  }, [items, typeFilter, riskFilter]);
+  }, [items, typeFilter, riskFilter, statusFilter]);
+
+  const runProposal = async (proposal: Proposal) => {
+    if (!activeOrg) return;
+    setBusy(true);
+    try {
+      const result = await executeMetaProposal(activeOrg.id, proposal.id);
+      toast.success(
+        result.status === "partially_completed"
+          ? "Execução parcial; revise o Histórico"
+          : `Concluído na Meta: ${proposal.title}`,
+      );
+      await load();
+    } catch (error) {
+      toast.error("A execução na Meta falhou", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const confirm = async () => {
     if (!active || !action || !activeOrg) return;
@@ -132,35 +156,12 @@ export default function ApprovalsPage() {
         });
       }
 
-      // Gradual Meta write: pause_* executes after human approval
-      if (action === "approve" && String(active.tool_name).startsWith("meta.pause")) {
-        // Routed via meta-connection (already deployed) to avoid 404 on new function names
-        const { data: exec, error: execErr } = await supabase.functions.invoke("meta-connection", {
-          body: {
-            action: "execute_proposal",
-            organization_id: activeOrg.id,
-            proposal_id: active.id,
-          },
-        });
-        if (execErr || exec?.error) {
-          const detail = exec?.detail || exec?.message || execErr?.message || exec?.error;
-          toast.error("Aprovado, mas a execução na Meta falhou", {
-            description: String(detail),
-          });
-        } else if (exec?.status === "completed") {
-          toast.success(`Executado na Meta: ${active.title}`);
-        } else if (exec?.status === "approved_only") {
-          toast.success(`Aprovado (sem execução automática): ${active.title}`);
-        } else {
-          toast.success(`Aprovado: ${active.title}`);
-        }
+      if (action === "approve") {
+        await runProposal(active);
       } else {
-        toast[action === "approve" ? "success" : "error"](
-          `${action === "approve" ? "Aprovado" : "Rejeitado"}: ${active.title}`,
-        );
+        toast.error(`Rejeitado: ${active.title}`);
       }
 
-      setItems((prev) => prev.filter((i) => i.id !== active.id));
       setActive(null);
       setAction(null);
       setNote("");
@@ -196,6 +197,17 @@ export default function ApprovalsPage() {
                 <SelectItem value="reversible">Reversível</SelectItem>
                 <SelectItem value="financial">Financeiro</SelectItem>
                 <SelectItem value="destructive">Destrutivo</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-9 w-[170px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="awaiting_approval">Aguardando aprovação</SelectItem>
+                <SelectItem value="executing">Executando</SelectItem>
+                <SelectItem value="completed">Concluídas</SelectItem>
+                <SelectItem value="failed">Falhas</SelectItem>
+                <SelectItem value="partially_completed">Parciais</SelectItem>
+                <SelectItem value="all">Todos os estados</SelectItem>
               </SelectContent>
             </Select>
             <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
@@ -237,6 +249,7 @@ export default function ApprovalsPage() {
                     <Badge className={cn("border-0 capitalize", riskStyle[a.risk_level])}>
                       Risco {a.risk_level}
                     </Badge>
+                    <Badge variant="outline">{String(a.status).replaceAll("_", " ")}</Badge>
                     {a.created_by_agent && (
                       <Badge variant="outline" className="text-[10px]">
                         Agente: {a.created_by_agent}
@@ -274,12 +287,10 @@ export default function ApprovalsPage() {
                   )}
                   <p className="mt-2 text-[11px] text-muted-foreground">
                     Tool: {a.tool_name} · {formatDateTime(a.created_at)}
-                    {String(a.tool_name).startsWith("meta.pause")
-                      ? " · Ao aprovar, executa pause na Meta"
-                      : ""}
+                    {String(a.tool_name).startsWith("meta.") ? " · Ao aprovar, o executor aplica e verifica na Meta" : ""}
                   </p>
                 </div>
-                <div className="flex gap-2">
+                {a.status === "awaiting_approval" ? <div className="flex gap-2">
                   <Button
                     variant="outline"
                     size="sm"
@@ -295,7 +306,11 @@ export default function ApprovalsPage() {
                   >
                     <Check className="h-3.5 w-3.5" /> Aprovar
                   </Button>
-                </div>
+                </div> : (a.status === "failed" || a.status === "approved" || a.status === "partially_completed") ? (
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => void runProposal(a)}>
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Tentar novamente"}
+                  </Button>
+                ) : null}
               </div>
             </Card>
           ))

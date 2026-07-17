@@ -80,9 +80,13 @@ function metricsFromInsights(ins: any | null, objective?: string | null) {
   const conversions = extractConversionCount(ins?.actions);
   const linkClicks = extractLinkClicks(ins?.actions) || (safeNum(ins?.inline_link_clicks) ?? 0);
   const revenue = extractPurchaseValue(ins?.action_values);
-  const { results, result_type } = extractResults(ins?.actions, objective);
+  const { results, result_type } = extractResults(ins?.actions, objective, {
+    linkClicks,
+  });
   const roas = extractRoas(ins?.purchase_roas) ??
     (spend !== null && spend > 0 && revenue > 0 ? revenue / spend : null);
+  const cpl = extractCostPerLead(ins?.cost_per_action_type, spend, leads);
+  const cpr = extractCostPerResult(ins?.cost_per_action_type, spend, results, result_type);
   return {
     spend: spend ?? 0,
     impressions: safeNum(ins?.impressions) ?? 0,
@@ -99,9 +103,15 @@ function metricsFromInsights(ins: any | null, objective?: string | null) {
     revenue,
     results,
     result_type,
-    cpl: extractCostPerLead(ins?.cost_per_action_type, spend, leads),
-    cpr: extractCostPerResult(ins?.cost_per_action_type, spend, results, result_type),
+    cpl,
+    cpr,
     roas,
+    metric_availability: {
+      cpl: leads > 0 && cpl !== null,
+      cpr: results > 0 && result_type !== "unknown" && cpr !== null,
+      roas: revenue > 0 && roas !== null,
+      result: result_type !== "unknown",
+    },
   };
 }
 
@@ -558,7 +568,7 @@ Deno.serve(async (req) => {
       acc.clicks += c.clicks;
       acc.leads += c.leads;
       acc.conversions += c.conversions;
-      acc.results += c.results;
+      acc.results += c.results ?? 0;
       acc.revenue += c.revenue;
       return acc;
     },

@@ -4,10 +4,11 @@
 //   POST { action: "test", organization_id }
 //   POST { action: "select_account", organization_id, asset_id }
 //   POST { action: "disconnect", organization_id }
+//   POST { action: "submit_action", organization_id, tool_name, arguments }
 //   POST { action: "execute_proposal", organization_id, proposal_id }
 import { corsHeaders, json, requireOrgMember, requireUser } from "../_shared/meta-auth.ts";
 import { decryptSecret } from "../_shared/meta-crypto.ts";
-import { executeApprovedProposal } from "../_shared/meta-execute-core.ts";
+import { executeApprovedProposal, submitMetaAction } from "../_shared/meta-execute-core.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_API_VERSION") ?? "v20.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -165,6 +166,28 @@ Deno.serve(async (req) => {
       organizationId: orgId,
       proposalId,
       userId: ctx.userId,
+    });
+    if (!result.ok) {
+      return json(
+        { error: result.error, detail: result.detail, message: result.message },
+        result.status ?? 400,
+      );
+    }
+    return json(result);
+  }
+
+  if (action === "submit_action") {
+    const toolName = String(body.tool_name ?? "");
+    const args = body.arguments && typeof body.arguments === "object" ? body.arguments : {};
+    if (!toolName) return json({ error: "tool_name_required" }, 400);
+    const result = await submitMetaAction(admin, {
+      organizationId: orgId,
+      userId: ctx.userId,
+      toolName,
+      arguments: args,
+      title: body.title ? String(body.title) : undefined,
+      explanation: body.explanation ? String(body.explanation) : undefined,
+      idempotencyKey: body.idempotency_key ? String(body.idempotency_key) : undefined,
     });
     if (!result.ok) {
       return json(

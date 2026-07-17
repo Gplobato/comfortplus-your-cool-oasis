@@ -16,6 +16,7 @@ import {
   type AiModelOption,
   type AiSettings,
 } from "@/lib/aiSettings";
+import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 
 const autonomy = [
   { level: 1, name: "Somente leitura", desc: "IA analisa mas não altera nada." },
@@ -42,6 +43,7 @@ const PRESET_VIDEO: AiModelOption[] = [
 type FetchKind = "text" | "image" | "video";
 
 export default function AISettingsPage() {
+  const { organizationId } = useMetaIntegration();
   const [settings, setSettings] = useState<AiSettings>(() => loadAiSettings());
   const [textModels, setTextModels] = useState<AiModelOption[]>(PRESET_TEXT);
   const [imageModels, setImageModels] = useState<AiModelOption[]>(PRESET_IMAGE);
@@ -51,6 +53,25 @@ export default function AISettingsPage() {
   useEffect(() => {
     setSettings(loadAiSettings());
   }, []);
+
+  useEffect(() => {
+    if (!organizationId) return;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("organization_ai_settings" as any)
+        .select("text_model,image_model,video_model,autonomy_level")
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+      if (error || !data) return;
+      setSettings((current) => ({
+        ...current,
+        textModel: (data as any).text_model,
+        imageModel: (data as any).image_model,
+        videoModel: (data as any).video_model,
+        autonomyLevel: Number((data as any).autonomy_level),
+      }));
+    })();
+  }, [organizationId]);
 
   const fetchModels = async (type: FetchKind | "all") => {
     setFetching(type);
@@ -95,11 +116,29 @@ export default function AISettingsPage() {
     setSettings((s) => ({ ...s, ...partial }));
   };
 
-  const save = () => {
+  const save = async () => {
+    if (!organizationId) return toast.error("Organização não selecionada");
+    const userId = (await supabase.auth.getUser()).data.user?.id;
+    const { error } = await supabase
+      .from("organization_ai_settings" as any)
+      .upsert({
+        organization_id: organizationId,
+        text_model: settings.textModel,
+        image_model: settings.imageModel,
+        video_model: settings.videoModel,
+        autonomy_level: settings.autonomyLevel,
+        allow_direct_pause: true,
+        allow_direct_paused_drafts: true,
+        require_approval_activation: true,
+        require_approval_budget: true,
+        max_budget_change_percent: 20,
+        updated_by: userId ?? null,
+      } as any, { onConflict: "organization_id" });
+    if (error) return toast.error("Falha ao salvar no servidor", { description: error.message });
     const saved = saveAiSettings(settings);
     setSettings(saved);
-    toast.success("Configuração de IA salva", {
-      description: "Usada pelo Agente de Criativos e pelo Gerente de Tráfego.",
+    toast.success("Configuração de IA salva no servidor", {
+      description: "A política conservadora será aplicada pelo executor Meta.",
     });
   };
 
@@ -125,7 +164,7 @@ export default function AISettingsPage() {
               {fetching === "all" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Buscar todos
             </Button>
-            <Button size="sm" className="bg-gradient-brand text-primary-foreground" onClick={save}>
+            <Button size="sm" className="bg-gradient-brand text-primary-foreground" onClick={() => void save()}>
               Salvar
             </Button>
           </div>
@@ -258,20 +297,18 @@ export default function AISettingsPage() {
         <Card className="p-5 shadow-card">
           <h3 className="mb-3 font-display font-bold">Permissões da IA</h3>
           <p className="mb-3 text-xs text-muted-foreground">
-            Preferências locais por enquanto — a execução write na Meta ainda exige aprovações.
+            Política conservadora aplicada no servidor; o frontend não pode ignorá-la.
           </p>
           <div className="space-y-3">
             {[
-              "Permitir pausar anúncios",
-              "Permitir criar campanhas",
-              "Permitir aumentar orçamento",
-              "Permitir reduzir orçamento",
-              "Exigir aprovação para ativação",
-              "Exigir aprovação para alterações acima de 20%",
-            ].map((p, i) => (
-              <div key={p} className="flex items-center justify-between rounded-lg bg-secondary/40 p-3">
-                <span className="text-sm">{p}</span>
-                <Switch defaultChecked={i !== 3 && settings.autonomyLevel >= 3} />
+              ["Permitir pausas diretas", true],
+              ["Permitir criar estruturas pausadas", true],
+              ["Exigir aprovação para ativação", true],
+              ["Exigir aprovação para qualquer alteração de orçamento", true],
+            ].map(([permission, checked]) => (
+              <div key={String(permission)} className="flex items-center justify-between rounded-lg bg-secondary/40 p-3">
+                <span className="text-sm">{permission}</span>
+                <Switch checked={Boolean(checked)} disabled />
               </div>
             ))}
           </div>

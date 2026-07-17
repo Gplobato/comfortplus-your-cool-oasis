@@ -9,6 +9,7 @@ interface MetricCardProps {
   deltaLabel?: string;
   icon: LucideIcon;
   tone?: "brand" | "accent" | "success" | "warning";
+  hint?: string;
 }
 
 const toneMap = {
@@ -18,10 +19,13 @@ const toneMap = {
   warning: "bg-warning-soft text-warning",
 };
 
-export function MetricCard({ label, value, delta, deltaLabel, icon: Icon, tone = "brand" }: MetricCardProps) {
+export function MetricCard({ label, value, delta, deltaLabel, icon: Icon, tone = "brand", hint }: MetricCardProps) {
   const positive = (delta ?? 0) >= 0;
   return (
-    <Card className="group relative overflow-hidden border-border/70 bg-card p-5 shadow-card transition-shadow hover:shadow-card-md">
+    <Card
+      className="group relative overflow-hidden border-border/70 bg-card p-5 shadow-card transition-shadow hover:shadow-card-md"
+      title={hint}
+    >
       <div className="flex items-start justify-between">
         <span className="text-sm font-medium text-muted-foreground">{label}</span>
         <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", toneMap[tone])}>
