@@ -50,21 +50,14 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="px-3 py-4">
         <NavLink to="/dashboard" className={cn("flex items-center", collapsed ? "justify-center" : "px-1")}>
-          <div
+          <img
+            src={proadsLogo}
+            alt="ProAds Marketing OS"
             className={cn(
-              "overflow-hidden rounded-xl bg-black shadow-sm",
-              collapsed ? "h-9 w-9" : "px-2.5 py-1.5",
+              "object-contain",
+              collapsed ? "h-9 w-9" : "h-9 w-auto max-w-[170px]",
             )}
-          >
-            <img
-              src={proadsLogo}
-              alt="ProAds Marketing OS"
-              className={cn(
-                "object-contain object-left",
-                collapsed ? "h-full w-full scale-125" : "h-8 w-auto max-w-[158px]",
-              )}
-            />
-          </div>
+          />
         </NavLink>
       </SidebarHeader>
 
