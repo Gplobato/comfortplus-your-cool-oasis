@@ -276,87 +276,85 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Chart + AI */}
-        <div className="grid items-stretch gap-4 lg:grid-cols-3">
-          <Card className="flex h-[560px] max-h-[70vh] flex-col p-5 shadow-card lg:col-span-2 lg:h-[600px]">
-            <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="font-display font-bold">Desempenho</h3>
-                <p className="text-xs text-muted-foreground">
-                  {useReal
-                    ? `${dash.data?.period.label ?? ""} · ${meta.selectedAdAccount?.name ?? ""}`
-                    : "Conecte a Meta para ver a série diária"}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Select value={chartMode} onValueChange={(v) => setChartMode(v as any)}>
-                  <SelectTrigger className="h-8 w-[170px] text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="spend">Investimento + CPM</SelectItem>
-                    <SelectItem value="leads">Leads + CPL</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+        {/* Chart */}
+        <Card className="p-5 shadow-card">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="font-display font-bold">Desempenho</h3>
+              <p className="text-xs text-muted-foreground">
+                {useReal
+                  ? `${dash.data?.period.label ?? ""} · ${meta.selectedAdAccount?.name ?? ""}`
+                  : "Conecte a Meta para ver a série diária"}
+              </p>
             </div>
-            <div className="min-h-0 w-full flex-1">
-              {useReal ? (
-                dash.isLoading && !series.length ? (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Carregando…</div>
-                ) : series.length ? (
-                  <ResponsiveContainer>
-                    <ComposedChart data={series}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                      <XAxis dataKey="date" tickFormatter={formatDate} stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                      <YAxis yAxisId="left" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                      <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                      <Tooltip
-                        contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }}
-                        formatter={(value: any, name: string) => {
-                          if (name === "spend" || name === "cpl" || name === "cpm" || name === "cpr") {
-                            return [formatCurrency(Number(value) || 0), name.toUpperCase()];
-                          }
-                          return [formatNumber(Number(value) || 0), name];
-                        }}
-                        labelFormatter={(l) => formatDate(String(l))}
-                      />
-                      <Legend />
-                      {chartMode === "spend" ? (
-                        <>
-                          <Area yAxisId="left" type="monotone" dataKey="spend" name="Investimento" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
-                          <Line yAxisId="right" type="monotone" dataKey="cpm" name="CPM" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
-                        </>
-                      ) : (
-                        <>
-                          <Area yAxisId="left" type="monotone" dataKey="leads" name="Leads" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
-                          <Line yAxisId="right" type="monotone" dataKey="cpl" name="CPL" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
-                        </>
-                      )}
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center">
-                    <EmptyState icon={BarChart3} title="Sem dados no período" description="Nenhuma métrica retornada pela Meta para esta janela." />
-                  </div>
-                )
+            <div className="flex items-center gap-2">
+              <Select value={chartMode} onValueChange={(v) => setChartMode(v as any)}>
+                <SelectTrigger className="h-8 w-[170px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="spend">Investimento + CPM</SelectItem>
+                  <SelectItem value="leads">Leads + CPL</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="h-72 w-full">
+            {useReal ? (
+              dash.isLoading && !series.length ? (
+                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Carregando…</div>
+              ) : series.length ? (
+                <ResponsiveContainer>
+                  <ComposedChart data={series}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis dataKey="date" tickFormatter={formatDate} stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis yAxisId="left" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                    <Tooltip
+                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }}
+                      formatter={(value: any, name: string) => {
+                        if (name === "spend" || name === "cpl" || name === "cpm" || name === "cpr") {
+                          return [formatCurrency(Number(value) || 0), name.toUpperCase()];
+                        }
+                        return [formatNumber(Number(value) || 0), name];
+                      }}
+                      labelFormatter={(l) => formatDate(String(l))}
+                    />
+                    <Legend />
+                    {chartMode === "spend" ? (
+                      <>
+                        <Area yAxisId="left" type="monotone" dataKey="spend" name="Investimento" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
+                        <Line yAxisId="right" type="monotone" dataKey="cpm" name="CPM" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
+                      </>
+                    ) : (
+                      <>
+                        <Area yAxisId="left" type="monotone" dataKey="leads" name="Leads" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
+                        <Line yAxisId="right" type="monotone" dataKey="cpl" name="CPL" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
+                      </>
+                    )}
+                  </ComposedChart>
+                </ResponsiveContainer>
               ) : (
                 <div className="flex h-full items-center justify-center">
-                  <EmptyState
-                    icon={BarChart3}
-                    title="Conta Meta não conectada"
-                    description="Conecte sua conta Meta em Integrações para ver métricas reais."
-                  />
+                  <EmptyState icon={BarChart3} title="Sem dados no período" description="Nenhuma métrica retornada pela Meta para esta janela." />
                 </div>
-              )}
-            </div>
-          </Card>
+              )
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  icon={BarChart3}
+                  title="Conta Meta não conectada"
+                  description="Conecte sua conta Meta em Integrações para ver métricas reais."
+                />
+              </div>
+            )}
+          </div>
+        </Card>
 
-          <TrafficManagerChat
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            compareCampaignIds={compareIds}
-            onConsumeCompare={() => setCompareIds(undefined)}
-          />
-        </div>
+        <TrafficManagerChat
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          compareCampaignIds={compareIds}
+          onConsumeCompare={() => setCompareIds(undefined)}
+        />
 
         <CampaignComparator
           dateFrom={dateFrom}

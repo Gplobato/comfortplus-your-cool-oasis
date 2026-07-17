@@ -53,6 +53,7 @@ LINGUAGEM (obrigatório):
 - Prefira: leads, clientes, receita, custo por resultado, "dinheiro parado", "orcamento queimado", "oportunidade".
 - Evite jargão solto (CPM, CTR, frequency) sem traduzir. Se precisar citar, explique em 1 frase o que isso significa pro bolso.
 - Crie urgência responsável: mostre o que está sendo deixado de ganhar ou desperdiçado AGORA, com estimativa baseada nos dados reais. Nunca invente números fora do META_CONTEXT; se for projeção, diga "estimativa".
+- STATUS: use campaign_counts + paused_campaigns / active_campaigns. Se campaign_counts.paused > 0, EXISTEM campanhas inativas/pausadas — nunca diga o contrário. Métricas de pausadas no período são históricas (gastaram antes de pausar). Para "vale reativar?", ranqueie paused_campaigns_with_spend.
 
 FORMATO DA RESPOSTA (obrigatório):
 1) Comece com ## Em 10 segundos (3–5 bullets em linguagem de cliente).
@@ -287,17 +288,28 @@ Deno.serve(async (req) => {
             .map(([k, v]) => `${k}=${v === null ? "n/d" : v}`)
             .join(", ")
         : "sem dados";
+      const fmtCamp = (c: any) =>
+        `${c.name}|id=${c.id}|status=${c.status}|eff=${c.effective_status ?? "?"}|spend=${c.spend}|leads=${c.leads}|cpl=${c.cpl ?? "n/d"}|cpm=${c.cpm ?? "n/d"}|ctr=${c.ctr ?? "n/d"}`;
       const camps = Array.isArray(metaContext.campaigns)
-        ? metaContext.campaigns
-            .slice(0, 20)
-            .map((c: any) => `${c.name}|spend=${c.spend}|leads=${c.leads}|cpl=${c.cpl ?? "n/d"}|cpm=${c.cpm ?? "n/d"}|ctr=${c.ctr ?? "n/d"}|status=${c.status}`)
-            .join(" || ")
+        ? metaContext.campaigns.slice(0, 30).map(fmtCamp).join(" || ")
         : "";
+      const paused = Array.isArray(metaContext.paused_campaigns)
+        ? metaContext.paused_campaigns.slice(0, 25).map(fmtCamp).join(" || ")
+        : "";
+      const pausedSpend = Array.isArray(metaContext.paused_campaigns_with_spend)
+        ? metaContext.paused_campaigns_with_spend.slice(0, 20).map(fmtCamp).join(" || ")
+        : "";
+      const active = Array.isArray(metaContext.active_campaigns)
+        ? metaContext.active_campaigns.slice(0, 20).map(fmtCamp).join(" || ")
+        : "";
+      const counts = metaContext.campaign_counts
+        ? JSON.stringify(metaContext.campaign_counts)
+        : "n/a";
       const sel = metaContext.selected_campaign
         ? JSON.stringify(metaContext.selected_campaign).slice(0, 4000)
         : "nenhuma";
       contextBits.push(
-        `META_CONTEXT (dados reais — NÃO invente números): connected=${metaContext.connected}, account=${metaContext.ad_account_name ?? "n/a"} (${metaContext.ad_account_id ?? "n/a"}), currency=${metaContext.currency ?? "n/a"}, period=${metaContext.period ? `${metaContext.period.from}..${metaContext.period.to}` : "n/a"}, summary=[${s}]. campaigns=[${camps || "n/a"}]. selected_campaign=${sel}. ${metaContext.guidance ?? ""}`,
+        `META_CONTEXT (dados reais — NÃO invente números): connected=${metaContext.connected}, account=${metaContext.ad_account_name ?? "n/a"} (${metaContext.ad_account_id ?? "n/a"}), currency=${metaContext.currency ?? "n/a"}, period=${metaContext.period ? `${metaContext.period.from}..${metaContext.period.to}` : "n/a"}, summary=[${s}]. campaign_counts=${counts}. active_campaigns=[${active || "nenhuma"}]. paused_campaigns=[${paused || "nenhuma"}]. paused_campaigns_with_spend=[${pausedSpend || "nenhuma"}]. campaigns=[${camps || "n/a"}]. selected_campaign=${sel}. ${metaContext.guidance ?? ""}`,
       );
     }
     const extraSystem = contextBits.join(" ");
