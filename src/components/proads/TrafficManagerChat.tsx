@@ -20,6 +20,8 @@ import {
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { CollapsibleChatBody } from "@/components/proads/CollapsibleChatBody";
+import { extractMoneyLeft, type MoneyLeftInsight } from "@/lib/trafficChat";
 
 type ChatMsg = {
   id: string;
@@ -28,14 +30,15 @@ type ChatMsg = {
   at: string;
   sources?: { title: string; url: string }[];
   proposals?: { id: string; title: string }[];
+  moneyLeft?: MoneyLeftInsight | null;
 };
 
 const QUICK = [
-  "Faça a análise mensal desta campanha",
-  "O que posso melhorar no CPL e no CPM?",
-  "Compare com as outras campanhas ativas",
-  "Pesquise concorrentes neste nicho",
-  "Proponha pausar criativos fatigados",
+  "Quanto estamos deixando de ganhar?",
+  "Faça a análise mensal em linguagem de negócio",
+  "Qual campanha está queimando dinheiro?",
+  "Compare as campanhas: onde está a oportunidade",
+  "Pesquise o que concorrentes estão fazendo neste nicho",
 ];
 
 function campaignBrief(c: MetaCampaignRow) {
@@ -279,16 +282,34 @@ export function TrafficManagerChat({
 
       const proposals = Array.isArray(data?.proposals) ? data.proposals : [];
       const searchResults = data?.search?.results ?? [];
+      const rawText = data?.text || "Sem resposta do gerente.";
+      const fromTag = extractMoneyLeft(rawText);
+      const apiMoney = data?.moneyLeft;
+      const moneyLeft: MoneyLeftInsight | null = apiMoney
+        ? {
+            amountBrl: apiMoney.amount_brl == null ? null : Number(apiMoney.amount_brl),
+            period: String(apiMoney.period || "mês"),
+            reason: String(apiMoney.reason || ""),
+            urgency:
+              String(apiMoney.urgency || "media").startsWith("alt")
+                ? "alta"
+                : String(apiMoney.urgency || "").startsWith("baix")
+                  ? "baixa"
+                  : "media",
+            actionHint: apiMoney.action_hint ? String(apiMoney.action_hint) : undefined,
+          }
+        : fromTag.insight;
 
       setMessages((m) => [
         ...m,
         {
           id: `a_${Date.now()}`,
           role: "assistant",
-          content: data?.text || "Sem resposta do gerente.",
+          content: fromTag.cleaned,
           at: new Date().toISOString(),
           sources: searchResults.map((r: any) => ({ title: r.title, url: r.url })),
           proposals: proposals.map((p: any) => ({ id: p.id, title: p.title })),
+          moneyLeft,
         },
       ]);
 
@@ -330,8 +351,8 @@ export function TrafficManagerChat({
   };
 
   return (
-    <Card className="flex h-full min-h-[420px] flex-col shadow-card">
-      <div className="flex items-center justify-between gap-2 border-b border-border p-4">
+    <Card className="flex h-[560px] max-h-[70vh] flex-col overflow-hidden shadow-card lg:h-[600px]">
+      <div className="shrink-0 flex items-center justify-between gap-2 border-b border-border p-3">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-brand">
             <Briefcase className="h-4 w-4 text-white" />
@@ -361,9 +382,9 @@ export function TrafficManagerChat({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
+      <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
         <Select value={selectedId} onValueChange={setSelectedId}>
-          <SelectTrigger className="h-8 w-full max-w-[240px] text-xs">
+          <SelectTrigger className="h-8 w-full max-w-[220px] text-xs">
             <SelectValue placeholder="Campanha" />
           </SelectTrigger>
           <SelectContent>
@@ -384,7 +405,7 @@ export function TrafficManagerChat({
       </div>
 
       {metaCtx.connected && metaCtx.summary && (
-        <div className="border-b border-border bg-gradient-brand-soft/40 px-3 py-2 text-[11px] text-muted-foreground">
+        <div className="shrink-0 border-b border-border bg-gradient-brand-soft/40 px-3 py-1.5 text-[11px] text-muted-foreground">
           Conta: {formatCurrency(metaCtx.summary.spend ?? 0)} · {formatNumber(metaCtx.summary.leads ?? 0)} leads ·
           CPM {formatMetaCurrency(metaCtx.summary.cpm)} · ROAS {formatRoas(metaCtx.summary.roas)} ·
           {campaigns.length} campanhas
@@ -392,54 +413,62 @@ export function TrafficManagerChat({
         </div>
       )}
 
-      <ScrollArea className="flex-1 px-3 py-3">
-        <div className="space-y-3">
-          {!memoryLoaded && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando memória…
-            </div>
-          )}
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={cn(
-                "rounded-lg px-3 py-2 text-sm leading-relaxed",
-                m.role === "user"
-                  ? "ml-6 bg-primary text-primary-foreground"
-                  : "mr-4 border border-border bg-card",
-              )}
-            >
-              <div className="whitespace-pre-wrap">{m.content}</div>
-              {!!m.sources?.length && (
-                <div className="mt-2 space-y-1 border-t border-border/60 pt-2 text-[10px] text-muted-foreground">
-                  {m.sources.slice(0, 5).map((s) => (
-                    <a key={s.url} href={s.url} target="_blank" rel="noreferrer" className="block truncate text-primary hover:underline">
-                      {s.title || s.url}
-                    </a>
-                  ))}
-                </div>
-              )}
-              {!!m.proposals?.length && (
-                <button
-                  type="button"
-                  className="mt-2 text-[10px] font-semibold text-primary underline"
-                  onClick={() => navigate("/aprovacoes")}
-                >
-                  {m.proposals.length} proposta(s) → Aprovações
-                </button>
-              )}
-            </div>
-          ))}
-          {loading && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Analisando…
-            </div>
-          )}
-          <div ref={endRef} />
-        </div>
-      </ScrollArea>
+      {/* Fixed message viewport with independent scrollbar */}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <ScrollArea className="h-full">
+          <div className="space-y-3 px-3 py-3 pr-4">
+            {!memoryLoaded && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando memória…
+              </div>
+            )}
+            {messages.map((m) => (
+              <div
+                key={m.id}
+                className={cn(
+                  "rounded-xl px-3.5 py-2.5 shadow-sm",
+                  m.role === "user"
+                    ? "ml-8 bg-primary text-primary-foreground"
+                    : "mr-2 border border-border bg-card",
+                )}
+              >
+                <CollapsibleChatBody
+                  content={m.content}
+                  tone={m.role === "user" ? "user" : "assistant"}
+                  moneyLeft={m.moneyLeft}
+                />
+                {!!m.sources?.length && (
+                  <div className="mt-2 space-y-1 border-t border-border/60 pt-2 text-[10px] text-muted-foreground">
+                    <p className="font-semibold uppercase tracking-wide">Fontes</p>
+                    {m.sources.slice(0, 5).map((s) => (
+                      <a key={s.url} href={s.url} target="_blank" rel="noreferrer" className="block truncate text-primary hover:underline">
+                        {s.title || s.url}
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {!!m.proposals?.length && (
+                  <button
+                    type="button"
+                    className="mt-2 text-[10px] font-semibold text-primary underline"
+                    onClick={() => navigate("/aprovacoes")}
+                  >
+                    {m.proposals.length} proposta(s) → Aprovações
+                  </button>
+                )}
+              </div>
+            ))}
+            {loading && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Analisando…
+              </div>
+            )}
+            <div ref={endRef} />
+          </div>
+        </ScrollArea>
+      </div>
 
-      <div className="flex flex-wrap gap-1.5 border-t border-border px-3 py-2">
+      <div className="shrink-0 flex flex-wrap gap-1.5 border-t border-border px-3 py-2">
         {QUICK.map((q) => (
           <button
             key={q}
@@ -454,7 +483,7 @@ export function TrafficManagerChat({
       </div>
 
       <form
-        className="flex items-end gap-2 border-t border-border p-3"
+        className="shrink-0 flex items-end gap-2 border-t border-border p-3"
         onSubmit={(e) => {
           e.preventDefault();
           void send(input);
@@ -465,7 +494,7 @@ export function TrafficManagerChat({
           onChange={(e) => setInput(e.target.value)}
           placeholder="Pergunte ao gerente de tráfego…"
           rows={2}
-          className="min-h-[40px] flex-1 resize-none rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          className="min-h-[40px] max-h-24 flex-1 resize-none rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -473,7 +502,7 @@ export function TrafficManagerChat({
             }
           }}
         />
-        <Button type="submit" size="icon" className="h-10 w-10 bg-gradient-brand text-primary-foreground" disabled={loading || !input.trim()}>
+        <Button type="submit" size="icon" className="h-10 w-10 shrink-0 bg-gradient-brand text-primary-foreground" disabled={loading || !input.trim()}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </form>

@@ -277,9 +277,9 @@ export default function DashboardPage() {
         )}
 
         {/* Chart + AI */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="p-5 shadow-card lg:col-span-2">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="grid items-stretch gap-4 lg:grid-cols-3">
+          <Card className="flex h-[560px] max-h-[70vh] flex-col p-5 shadow-card lg:col-span-2 lg:h-[600px]">
+            <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="font-display font-bold">Desempenho</h3>
                 <p className="text-xs text-muted-foreground">
@@ -298,7 +298,7 @@ export default function DashboardPage() {
                 </Select>
               </div>
             </div>
-            <div className="h-72 w-full">
+            <div className="min-h-0 w-full flex-1">
               {useReal ? (
                 dash.isLoading && !series.length ? (
                   <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Carregando…</div>

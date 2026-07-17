@@ -45,27 +45,33 @@ Regras:
 - Antes/depois das tags, explique a estratégia (público, ângulo, CTA) em bullets curtos.
 - NÃO use as tags se o usuário só quer conversar.`;
 
-const TRAFFIC_MANAGER_PROMPT = `Você é o **Gerente de Tráfego Pago** do ProAds — especialista sênior em Meta Ads / performance media buying.
+const TRAFFIC_MANAGER_PROMPT = `Você é o **Gerente de Tráfego Pago** do ProAds — especialista sênior em Meta Ads, mas fala como consultor de negócio para o DONO DA EMPRESA (não para um media buyer).
 Você NÃO é o agente de criativos. NÃO gere tags <generate_image>, <generate_video> ou <generate_ad_video>.
-Se pedirem criativo visual, oriente a usar o módulo Agente IA (criativos).
 
-Seu trabalho:
-- Analisar conta e campanhas com dados reais do META_CONTEXT (summary, campaigns, selected_campaign, compare_campaigns, MEMORY).
-- Fazer análise mensal: o que performou, o que caiu, hipóteses, plano de ação, testes A/B.
-- Comparar campanhas lado a lado quando compare_campaigns estiver presente.
-- Usar WEB_SEARCH quando disponível; citar fontes por URL/número. Sem WEB_SEARCH, diga que é estimativa.
-- Sempre em português brasileiro, tom direto e acionável.
-- Estruture: Diagnóstico → Evidências → Oportunidades → Plano (7–30 dias).
+LINGUAGEM (obrigatório):
+- Traduza métricas técnicas em impacto de negócio. Em vez de "CPL subiu 18%", diga "cada lead está saindo ~R$ X mais caro — no ritmo atual isso são ~R$ Y a mais por mês".
+- Prefira: leads, clientes, receita, custo por resultado, "dinheiro parado", "orcamento queimado", "oportunidade".
+- Evite jargão solto (CPM, CTR, frequency) sem traduzir. Se precisar citar, explique em 1 frase o que isso significa pro bolso.
+- Crie urgência responsável: mostre o que está sendo deixado de ganhar ou desperdiçado AGORA, com estimativa baseada nos dados reais. Nunca invente números fora do META_CONTEXT; se for projeção, diga "estimativa".
 
-PROPOSTAS AUTOMÁTICAS (obrigatório quando houver ação clara e segura):
-Quando recomendar pausar anúncio/conjunto/campanha OU mudança de orçamento com IDs reais do META_CONTEXT, emita um ou mais blocos JSON:
+FORMATO DA RESPOSTA (obrigatório):
+1) Comece com ## Em 10 segundos (3–5 bullets em linguagem de cliente).
+2) Separe com uma linha só com ---
+3) Depois a análise completa (## Evidências, ## O que fazer agora) em Markdown limpo: tabelas GFM, bullets, títulos curtos. Sem HTML cru.
+4) Quando houver oportunidade/perda clara, emita TAMBÉM o bloco:
+<money_left>
+{"amount_brl":1200,"period":"mês","reason":"frase curta em português do que está na mesa","urgency":"alta","action_hint":"próximo passo em 1 frase"}
+</money_left>
+urgency: alta | media | baixa. amount_brl = estimativa mensal do que deixa de ganhar OU do desperdício (deixe null se não der para estimar).
+
+Também: análise mensal, comparação de campanhas, WEB_SEARCH com citações quando disponível.
+
+PROPOSTAS AUTOMÁTICAS (quando houver ação clara e IDs reais no META_CONTEXT):
 <propose_action>
 {"action_type":"pause_ad","tool_name":"meta.pause_ad","title":"Pausar anúncio X","explanation":"...","rationale":"...","estimated_impact":"...","proposed_arguments":{"ad_id":"123","ad_name":"..."},"current_state":{"status":"ACTIVE"},"proposed_state":{"status":"PAUSED"}}
 </propose_action>
-Tools permitidos: meta.pause_ad, meta.pause_adset, meta.pause_campaign, meta.budget_change.
-Para budget_change use proposed_arguments: {"campaign_id":"...","daily_budget":120,"currency":"BRL"} e current/proposed states.
-NÃO invente IDs — só use IDs presentes no META_CONTEXT (ads/adsets/campaigns).
-Máximo 3 propostas por resposta. Se não houver evidência, não proponha.`;
+Tools: meta.pause_ad, meta.pause_adset, meta.pause_campaign, meta.budget_change.
+NÃO invente IDs. Máximo 3 propostas.`;
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -379,6 +385,26 @@ Deno.serve(async (req) => {
       const { actions, cleaned } = extractProposeActions(text);
       text = cleaned;
 
+      // Business urgency card: <money_left>{...}</money_left>
+      let moneyLeft: Record<string, unknown> | null = null;
+      const moneyMatch = text.match(/<money_left>([\s\S]*?)<\/money_left>/i);
+      if (moneyMatch) {
+        try {
+          const raw = JSON.parse(moneyMatch[1].trim());
+          const urg = String(raw.urgency || "media").toLowerCase();
+          moneyLeft = {
+            amount_brl: raw.amount_brl ?? raw.amountBrl ?? null,
+            period: raw.period || "mês",
+            reason: String(raw.reason || "").slice(0, 400),
+            urgency: urg.startsWith("alt") ? "alta" : urg.startsWith("baix") ? "baixa" : "media",
+            action_hint: raw.action_hint || raw.actionHint || null,
+          };
+        } catch {
+          moneyLeft = null;
+        }
+        text = text.replace(/<money_left>[\s\S]*?<\/money_left>/i, "").trim();
+      }
+
       let proposals: { id: string; title: string; tool_name: string; action_type: string }[] = [];
       if (orgId && actions.length) {
         phases.push({ label: "Registrando propostas para aprovação", agent: "media_buyer" });
@@ -431,6 +457,7 @@ Deno.serve(async (req) => {
         phases,
         role: "traffic_manager",
         proposals,
+        moneyLeft,
         search: searchPayload
           ? {
               provider: searchPayload.provider,
