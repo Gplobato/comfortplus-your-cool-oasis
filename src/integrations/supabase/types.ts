@@ -605,6 +605,93 @@ export type Database = {
           },
         ]
       }
+      wizard_preview_requests: {
+        Row: {
+          answers: Json
+          attempts: number
+          completed_at: string | null
+          created_at: string
+          cta: string | null
+          device_hash: string
+          error_code: string | null
+          headline: string | null
+          id: string
+          ip_hash: string
+          primary_text: string | null
+          prompt: string | null
+          result_url: string | null
+          status: string
+        }
+        Insert: {
+          answers?: Json
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          cta?: string | null
+          device_hash: string
+          error_code?: string | null
+          headline?: string | null
+          id?: string
+          ip_hash: string
+          primary_text?: string | null
+          prompt?: string | null
+          result_url?: string | null
+          status?: string
+        }
+        Update: {
+          answers?: Json
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          cta?: string | null
+          device_hash?: string
+          error_code?: string | null
+          headline?: string | null
+          id?: string
+          ip_hash?: string
+          primary_text?: string | null
+          prompt?: string | null
+          result_url?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      wizard_waitlist_leads: {
+        Row: {
+          answers: Json
+          created_at: string
+          email: string
+          id: string
+          intent: string
+          name: string | null
+          source: string
+          updated_at: string
+          whatsapp: string | null
+        }
+        Insert: {
+          answers?: Json
+          created_at?: string
+          email: string
+          id?: string
+          intent?: string
+          name?: string | null
+          source?: string
+          updated_at?: string
+          whatsapp?: string | null
+        }
+        Update: {
+          answers?: Json
+          created_at?: string
+          email?: string
+          id?: string
+          intent?: string
+          name?: string | null
+          source?: string
+          updated_at?: string
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       meta_connections_public: {
