@@ -282,7 +282,7 @@ export default function CreativeDetailPage() {
             <div className="mt-3 space-y-2">
               {(links.data ?? []).length === 0 ? (
                 <p className="text-xs text-muted-foreground">Ainda não vinculado.</p>
-              ) : (links.data as Array<{
+              ) : (links.data as unknown as Array<{
                 id: string;
                 campaign_name: string | null;
                 campaign_external_id: string;

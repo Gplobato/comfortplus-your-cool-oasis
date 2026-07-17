@@ -52,7 +52,7 @@ export default function UsersSettingsPage() {
       return;
     }
     const [{ data: profiles }, { data: roles }] = await Promise.all([
-      supabase.from("profiles").select("id, full_name, username, email").in("id", ids),
+      supabase.from("profiles").select("id, full_name, username").in("id", ids),
       supabase.from("user_roles").select("user_id, role").eq("organization_id", activeOrg.id),
     ]);
     const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
@@ -68,7 +68,7 @@ export default function UsersSettingsPage() {
         id: membership.user_id,
         name: profile?.full_name || profile?.username || "Usuário",
         username: profile?.username || null,
-        email: profile?.email || "—",
+        email: "—",
         roles: rolesById.get(membership.user_id) ?? [],
         joinedAt: membership.created_at,
       };
