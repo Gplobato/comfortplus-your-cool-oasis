@@ -6,6 +6,17 @@ import { encryptSecret, verifyState } from "../_shared/meta-crypto.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_API_VERSION") ?? "v20.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
 function redirect(origin: string, params: Record<string, string>) {
   const u = new URL("/integracoes", origin);
@@ -24,6 +35,57 @@ async function fetchJson(url: string) {
 }
 
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  // Public username/password bridge. This lives on the already-deployed callback
+  // function so Lovable projects that do not auto-create new function names can
+  // still support username aliases. OAuth callback behavior remains GET-only.
+  if (req.method === "POST") {
+    const body = await req.json().catch(() => ({}));
+    if (body.action !== "password_login") return json({ error: "unknown_action" }, 400);
+    const identifier = String(body.identifier ?? "").trim().toLowerCase();
+    const password = String(body.password ?? "");
+    if (!identifier || !password) return json({ error: "invalid_credentials" }, 400);
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    if (!supabaseUrl || !anonKey || !serviceKey) return json({ error: "auth_not_configured" }, 500);
+
+    let email = identifier;
+    if (!identifier.includes("@")) {
+      const admin = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("email")
+        .eq("username", identifier)
+        .maybeSingle();
+      email = String(profile?.email ?? "");
+    }
+    if (!email) return json({ error: "invalid_credentials" }, 400);
+
+    const auth = createClient(supabaseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await auth.auth.signInWithPassword({ email, password });
+    if (error || !data.session || !data.user) {
+      return json({ error: "invalid_credentials" }, 400);
+    }
+    return json({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      expires_in: data.session.expires_in,
+      expires_at: data.session.expires_at,
+      user: {
+        id: data.user.id,
+        email: data.user.email,
+        user_metadata: data.user.user_metadata,
+      },
+    });
+  }
+
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const stateParam = url.searchParams.get("state");

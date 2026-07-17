@@ -46,8 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const { data, error } = await supabase.functions.invoke("auth-password-login", {
-      body: { identifier: normalized, password },
+    const { data, error } = await supabase.functions.invoke("meta-oauth-callback", {
+      body: { action: "password_login", identifier: normalized, password },
     });
     if (error || data?.error || !data?.access_token || !data?.refresh_token) {
       throw new Error("invalid_credentials");
