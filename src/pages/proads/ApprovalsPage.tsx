@@ -134,8 +134,13 @@ export default function ApprovalsPage() {
 
       // Gradual Meta write: pause_* executes after human approval
       if (action === "approve" && String(active.tool_name).startsWith("meta.pause")) {
-        const { data: exec, error: execErr } = await supabase.functions.invoke("meta-execute", {
-          body: { organization_id: activeOrg.id, proposal_id: active.id },
+        // Routed via meta-connection (already deployed) to avoid 404 on new function names
+        const { data: exec, error: execErr } = await supabase.functions.invoke("meta-connection", {
+          body: {
+            action: "execute_proposal",
+            organization_id: activeOrg.id,
+            proposal_id: active.id,
+          },
         });
         if (execErr || exec?.error) {
           const detail = exec?.detail || exec?.message || execErr?.message || exec?.error;

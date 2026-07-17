@@ -4,8 +4,10 @@
 //   POST { action: "test", organization_id }
 //   POST { action: "select_account", organization_id, asset_id }
 //   POST { action: "disconnect", organization_id }
+//   POST { action: "execute_proposal", organization_id, proposal_id }
 import { corsHeaders, json, requireOrgMember, requireUser } from "../_shared/meta-auth.ts";
 import { decryptSecret } from "../_shared/meta-crypto.ts";
+import { executeApprovedProposal } from "../_shared/meta-execute-core.ts";
 
 const GRAPH_VERSION = Deno.env.get("META_GRAPH_API_VERSION") ?? "v20.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -154,6 +156,23 @@ Deno.serve(async (req) => {
       entity_id: conn.id,
     });
     return json({ ok: true });
+  }
+
+  if (action === "execute_proposal") {
+    const proposalId = String(body.proposal_id ?? "");
+    if (!proposalId) return json({ error: "proposal_id_required" }, 400);
+    const result = await executeApprovedProposal(admin, {
+      organizationId: orgId,
+      proposalId,
+      userId: ctx.userId,
+    });
+    if (!result.ok) {
+      return json(
+        { error: result.error, detail: result.detail, message: result.message },
+        result.status ?? 400,
+      );
+    }
+    return json(result);
   }
 
   return json({ error: "unknown_action" }, 400);
