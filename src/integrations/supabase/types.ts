@@ -226,6 +226,194 @@ export type Database = {
           },
         ]
       }
+      creative_campaign_links: {
+        Row: {
+          adset_external_id: string | null
+          adset_name: string | null
+          campaign_external_id: string
+          campaign_name: string | null
+          created_at: string
+          created_by: string | null
+          creative_id: string
+          id: string
+          meta_ad_id: string | null
+          meta_creative_id: string | null
+          organization_id: string
+          publication_error: string | null
+          publication_status: string
+          updated_at: string
+        }
+        Insert: {
+          adset_external_id?: string | null
+          adset_name?: string | null
+          campaign_external_id: string
+          campaign_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          creative_id: string
+          id?: string
+          meta_ad_id?: string | null
+          meta_creative_id?: string | null
+          organization_id: string
+          publication_error?: string | null
+          publication_status?: string
+          updated_at?: string
+        }
+        Update: {
+          adset_external_id?: string | null
+          adset_name?: string | null
+          campaign_external_id?: string
+          campaign_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          creative_id?: string
+          id?: string
+          meta_ad_id?: string | null
+          meta_creative_id?: string | null
+          organization_id?: string
+          publication_error?: string | null
+          publication_status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_campaign_links_creative_id_fkey"
+            columns: ["creative_id"]
+            isOneToOne: false
+            referencedRelation: "creatives"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_campaign_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      creatives: {
+        Row: {
+          active_ads_count: number
+          ads_count: number
+          archived_at: string | null
+          created_at: string
+          created_by_ai: boolean
+          created_by_user_id: string | null
+          cta: string | null
+          description: string | null
+          destination_url: string | null
+          file_size: number | null
+          format: string | null
+          headline: string | null
+          height: number | null
+          id: string
+          in_use: boolean
+          last_synced_at: string | null
+          media_url: string | null
+          meta_ad_account_id: string | null
+          meta_creative_id: string | null
+          meta_payload: Json
+          mime_type: string | null
+          name: string
+          object_type: string | null
+          organization_id: string
+          performance: Json
+          primary_text: string | null
+          publication_status: string
+          source: Database["public"]["Enums"]["creative_source"]
+          status: string | null
+          storage_path: string | null
+          tags: string[]
+          thumbnail_url: string | null
+          type: string | null
+          updated_at: string
+          width: number | null
+        }
+        Insert: {
+          active_ads_count?: number
+          ads_count?: number
+          archived_at?: string | null
+          created_at?: string
+          created_by_ai?: boolean
+          created_by_user_id?: string | null
+          cta?: string | null
+          description?: string | null
+          destination_url?: string | null
+          file_size?: number | null
+          format?: string | null
+          headline?: string | null
+          height?: number | null
+          id?: string
+          in_use?: boolean
+          last_synced_at?: string | null
+          media_url?: string | null
+          meta_ad_account_id?: string | null
+          meta_creative_id?: string | null
+          meta_payload?: Json
+          mime_type?: string | null
+          name: string
+          object_type?: string | null
+          organization_id: string
+          performance?: Json
+          primary_text?: string | null
+          publication_status?: string
+          source?: Database["public"]["Enums"]["creative_source"]
+          status?: string | null
+          storage_path?: string | null
+          tags?: string[]
+          thumbnail_url?: string | null
+          type?: string | null
+          updated_at?: string
+          width?: number | null
+        }
+        Update: {
+          active_ads_count?: number
+          ads_count?: number
+          archived_at?: string | null
+          created_at?: string
+          created_by_ai?: boolean
+          created_by_user_id?: string | null
+          cta?: string | null
+          description?: string | null
+          destination_url?: string | null
+          file_size?: number | null
+          format?: string | null
+          headline?: string | null
+          height?: number | null
+          id?: string
+          in_use?: boolean
+          last_synced_at?: string | null
+          media_url?: string | null
+          meta_ad_account_id?: string | null
+          meta_creative_id?: string | null
+          meta_payload?: Json
+          mime_type?: string | null
+          name?: string
+          object_type?: string | null
+          organization_id?: string
+          performance?: Json
+          primary_text?: string | null
+          publication_status?: string
+          source?: Database["public"]["Enums"]["creative_source"]
+          status?: string | null
+          storage_path?: string | null
+          tags?: string[]
+          thumbnail_url?: string | null
+          type?: string | null
+          updated_at?: string
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creatives_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mcp_sessions: {
         Row: {
           connection_id: string
@@ -474,6 +662,65 @@ export type Database = {
             foreignKeyName: "meta_connections_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_ai_settings: {
+        Row: {
+          allow_direct_pause: boolean
+          allow_direct_paused_drafts: boolean
+          autonomy_level: number
+          created_at: string
+          image_model: string
+          max_budget_change_percent: number
+          max_daily_budget_brl: number | null
+          organization_id: string
+          require_approval_activation: boolean
+          require_approval_budget: boolean
+          text_model: string
+          updated_at: string
+          updated_by: string | null
+          video_model: string
+        }
+        Insert: {
+          allow_direct_pause?: boolean
+          allow_direct_paused_drafts?: boolean
+          autonomy_level?: number
+          created_at?: string
+          image_model?: string
+          max_budget_change_percent?: number
+          max_daily_budget_brl?: number | null
+          organization_id: string
+          require_approval_activation?: boolean
+          require_approval_budget?: boolean
+          text_model?: string
+          updated_at?: string
+          updated_by?: string | null
+          video_model?: string
+        }
+        Update: {
+          allow_direct_pause?: boolean
+          allow_direct_paused_drafts?: boolean
+          autonomy_level?: number
+          created_at?: string
+          image_model?: string
+          max_budget_change_percent?: number
+          max_daily_budget_brl?: number | null
+          organization_id?: string
+          require_approval_activation?: boolean
+          require_approval_budget?: boolean
+          text_model?: string
+          updated_at?: string
+          updated_by?: string | null
+          video_model?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_ai_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -787,6 +1034,7 @@ export type Database = {
         | "creative"
         | "approver"
         | "viewer"
+      creative_source: "meta" | "ai" | "upload"
       execution_status:
         | "pending"
         | "running"
@@ -962,6 +1210,7 @@ export const Constants = {
         "approver",
         "viewer",
       ],
+      creative_source: ["meta", "ai", "upload"],
       execution_status: [
         "pending",
         "running",
