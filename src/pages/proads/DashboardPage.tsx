@@ -59,6 +59,8 @@ export default function DashboardPage() {
 
   const dash = useMetaDashboard({ dateFrom, dateTo });
   const camps = useMetaCampaigns({ status: "ACTIVE", dateFrom, dateTo });
+  const geo = useMetaGeo({ dateFrom, dateTo, breakdown: "country" });
+  const [geoMetric, setGeoMetric] = useState<"impressions" | "reach" | "clicks" | "leads">("impressions");
 
   const useReal = meta.connected && !!meta.selectedAdAccount;
   const summary = dash.data?.summary;
