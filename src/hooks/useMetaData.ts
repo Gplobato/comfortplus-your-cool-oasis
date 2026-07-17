@@ -4,6 +4,20 @@ import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { metaKeys } from "@/lib/metaKeys";
 import { listOwnedCreatives, type OwnedCreative } from "@/lib/creative-library";
 
+export class MetaApiError extends Error {
+  readonly code: string;
+  readonly status: number;
+  readonly requestId?: string;
+
+  constructor(input: { code: string; message?: string; status: number; requestId?: string }) {
+    super(input.message || input.code);
+    this.name = "MetaApiError";
+    this.code = input.code;
+    this.status = input.status;
+    this.requestId = input.requestId;
+  }
+}
+
 async function fetchJson(path: string, params: Record<string, string>) {
   const session = (await supabase.auth.getSession()).data.session;
   const qs = new URLSearchParams(params).toString();
@@ -16,8 +30,12 @@ async function fetchJson(path: string, params: Record<string, string>) {
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
-    const code = j?.error ?? `http_${r.status}`;
-    throw new Error(String(code));
+    throw new MetaApiError({
+      code: String(j?.error ?? `http_${r.status}`),
+      message: j?.message ? String(j.message) : undefined,
+      status: r.status,
+      requestId: j?.request_id ? String(j.request_id) : undefined,
+    });
   }
   return j;
 }
@@ -243,7 +261,6 @@ export function useMetaCampaigns(opts?: {
     },
     enabled: !!organizationId && !!selectedAdAccount && connected,
     staleTime: 90_000,
-    placeholderData: (prev) => prev,
   });
 }
 
@@ -332,15 +349,12 @@ export function useMetaCampaignDetail(
   if (opts?.dateTo) params.date_to = opts.dateTo;
 
   return useQuery({
-    queryKey: [
-      ...metaKeys.campaigns(organizationId, selectedAdAccount?.id ?? null, {
-        from: opts?.dateFrom,
-        to: opts?.dateTo,
-      }),
-      "detail",
-      campaignId,
-      "hierarchy",
-    ],
+    queryKey: metaKeys.campaignDetail(
+      organizationId,
+      selectedAdAccount?.id ?? null,
+      campaignId ?? null,
+      { from: opts?.dateFrom, to: opts?.dateTo },
+    ),
     queryFn: async () => {
       const j = await fetchJson("meta-campaigns", params);
       return j as {
@@ -356,7 +370,6 @@ export function useMetaCampaignDetail(
     },
     enabled: !!organizationId && !!selectedAdAccount && connected && !!campaignId,
     staleTime: 90_000,
-    placeholderData: (prev) => prev,
   });
 }
 

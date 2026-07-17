@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Pause, Play, ExternalLink, DollarSign, MousePointerClick,
-  Target, Users2, Eye, Percent, TrendingUp, Activity, ImageIcon,
+  Target, Users2, Eye, Percent, TrendingUp, Activity, ImageIcon, RefreshCw,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
@@ -15,6 +16,15 @@ import { HierarchyMetricsTable } from "@/components/proads/HierarchyMetricsTable
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -23,9 +33,14 @@ import {
 } from "@/lib/format";
 import { periodRange } from "@/lib/dates";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
-import { useMetaCampaignDetail } from "@/hooks/useMetaData";
+import {
+  MetaApiError,
+  useMetaCampaignDetail,
+  type MetaCampaignRow,
+} from "@/hooks/useMetaData";
 import { toast } from "sonner";
 import { metaActionToastMessage, submitMetaAction } from "@/lib/meta-actions";
+import { metaErrorMessage } from "@/lib/metaErrors";
 
 const PERIOD_DAYS: Record<string, number> = { today: 1, "7d": 7, "14d": 14, "30d": 30 };
 
@@ -37,12 +52,16 @@ function goalLabel(raw: string | null | undefined) {
 export default function CampaignDetailPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const meta = useMetaIntegration();
   const [periodKey, setPeriodKey] = useState<"today" | "7d" | "14d" | "30d">("14d");
   const [adsetStatus, setAdsetStatus] = useState<string>("all");
   const [adStatus, setAdStatus] = useState<string>("all");
   const [selectedAdsetId, setSelectedAdsetId] = useState<string>("all");
   const [actionBusy, setActionBusy] = useState(false);
+  const [startOpen, setStartOpen] = useState(false);
+  const [startAdsetIds, setStartAdsetIds] = useState<Set<string>>(new Set());
+  const [startAdIds, setStartAdIds] = useState<Set<string>>(new Set());
 
   const tz = meta.selectedAdAccount?.timezone || "America/Sao_Paulo";
   const { dateFrom, dateTo } = useMemo(
@@ -53,10 +72,21 @@ export default function CampaignDetailPage() {
   const useReal = meta.connected && !!meta.selectedAdAccount && !!id;
   const detail = useMetaCampaignDetail(useReal ? id : undefined, { dateFrom, dateTo });
   const c = detail.data?.campaign;
-  const series = detail.data?.series ?? [];
-  const adsets = detail.data?.adsets ?? [];
-  const ads = detail.data?.ads ?? [];
-  const warnings = detail.data?.warnings ?? [];
+  const cachedCampaign = useMemo(() => {
+    if (!meta.organizationId || !meta.selectedAdAccount) return undefined;
+    const matches = queryClient.getQueriesData<{ campaigns?: MetaCampaignRow[] }>({
+      queryKey: ["meta", "campaigns", meta.organizationId, meta.selectedAdAccount.id],
+    });
+    for (const [, data] of matches) {
+      const campaign = data?.campaigns?.find((item) => item.id === id);
+      if (campaign) return campaign;
+    }
+    return undefined;
+  }, [id, meta.organizationId, meta.selectedAdAccount, queryClient]);
+  const series = useMemo(() => detail.data?.series ?? [], [detail.data?.series]);
+  const adsets = useMemo(() => detail.data?.adsets ?? [], [detail.data?.adsets]);
+  const ads = useMemo(() => detail.data?.ads ?? [], [detail.data?.ads]);
+  const warnings = useMemo(() => detail.data?.warnings ?? [], [detail.data?.warnings]);
   const requestId = detail.data?.request_id;
 
   const filteredAdsets = useMemo(() => {
@@ -82,6 +112,10 @@ export default function CampaignDetailPage() {
   }
 
   if (useReal && (detail.error || !c)) {
+    const friendly = metaErrorMessage(detail.error);
+    const apiError = detail.error instanceof MetaApiError ? detail.error : null;
+    const missing = apiError?.code === "campaign_not_in_selected_account" ||
+      apiError?.code === "invalid_campaign_id";
     return (
       <div className="space-y-4 p-8">
         <Button variant="ghost" size="sm" className="gap-1" onClick={() => navigate("/campanhas")}>
@@ -89,9 +123,26 @@ export default function CampaignDetailPage() {
         </Button>
         <EmptyState
           icon={Activity}
-          title="Campanha não encontrada"
-          description="Não foi possível carregar os dados reais desta campanha na Meta."
+          title={missing ? "Campanha indisponível nesta conta" : friendly.title}
+          description={
+            missing
+              ? `${cachedCampaign?.name ? `${cachedCampaign.name}: ` : ""}${apiError?.message}`
+              : friendly.description
+          }
         />
+        {apiError?.requestId && (
+          <p className="text-center text-[11px] text-muted-foreground">
+            Diagnóstico: {apiError.requestId}
+          </p>
+        )}
+        <div className="flex justify-center gap-2">
+          <Button variant="outline" onClick={() => void detail.refetch()}>
+            <RefreshCw className="mr-2 h-4 w-4" /> Tentar novamente
+          </Button>
+          {friendly.kind === "token_expired" && (
+            <Button onClick={() => navigate("/integracoes")}>Reconectar Meta</Button>
+          )}
+        </div>
       </div>
     );
   }
@@ -133,6 +184,45 @@ export default function CampaignDetailPage() {
     }
   };
 
+  const openStartDialog = () => {
+    setStartAdsetIds(new Set(
+      adsets
+        .filter((item) => item.status === "PAUSED" || item.status === "DRAFT")
+        .map((item) => item.id),
+    ));
+    setStartAdIds(new Set(
+      ads
+        .filter((item) => item.status === "PAUSED" || item.status === "DRAFT")
+        .map((item) => item.id),
+    ));
+    setStartOpen(true);
+  };
+
+  const toggleStartId = (
+    id: string,
+    setter: Dispatch<SetStateAction<Set<string>>>,
+  ) => {
+    setter((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const startCampaignStructure = async () => {
+    await submitCampaignAction(
+      "meta.activate_campaign_structure",
+      {
+        campaign_id: c!.id,
+        adset_ids: [...startAdsetIds],
+        ad_ids: [...startAdIds],
+      },
+      `Iniciar veiculação de ${c!.name}`,
+    );
+    setStartOpen(false);
+  };
+
   return (
     <>
       <PageHeader
@@ -148,7 +238,10 @@ export default function CampaignDetailPage() {
         }
         actions={
           <>
-            <Select value={periodKey} onValueChange={(v) => setPeriodKey(v as any)}>
+            <Select
+              value={periodKey}
+              onValueChange={(v) => setPeriodKey(v as typeof periodKey)}
+            >
               <SelectTrigger className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="today">Hoje</SelectItem>
@@ -160,25 +253,27 @@ export default function CampaignDetailPage() {
             <Button variant="ghost" size="sm" className="h-9 gap-1" onClick={() => navigate(-1)}>
               <ArrowLeft className="h-3.5 w-3.5" /> Voltar
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 gap-2"
-              disabled={actionBusy}
-              onClick={() => {
-                const raw = window.prompt("Novo orçamento diário em R$:", String(c!.dailyBudget || ""));
-                if (!raw) return;
-                const dailyBudget = Number(raw.replace(",", "."));
-                if (!Number.isFinite(dailyBudget) || dailyBudget <= 0) return toast.error("Orçamento inválido");
-                void submitCampaignAction(
-                  "meta.update_campaign_budget",
-                  { campaign_id: c!.id, daily_budget_brl: dailyBudget },
-                  `Alterar orçamento de ${c!.name}`,
-                );
-              }}
-            >
-              <DollarSign className="h-3.5 w-3.5" /> Alterar orçamento
-            </Button>
+            {c!.budgetLevel !== "adset" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 gap-2"
+                disabled={actionBusy}
+                onClick={() => {
+                  const raw = window.prompt("Novo orçamento diário em R$:", String(c!.dailyBudget || ""));
+                  if (!raw) return;
+                  const dailyBudget = Number(raw.replace(",", "."));
+                  if (!Number.isFinite(dailyBudget) || dailyBudget <= 0) return toast.error("Orçamento inválido");
+                  void submitCampaignAction(
+                    "meta.update_campaign_budget",
+                    { campaign_id: c!.id, daily_budget_brl: dailyBudget },
+                    `Alterar orçamento de ${c!.name}`,
+                  );
+                }}
+              >
+                <DollarSign className="h-3.5 w-3.5" /> Alterar orçamento
+              </Button>
+            )}
             {c!.status === "ACTIVE" ? (
               <Button
                 variant="outline"
@@ -194,9 +289,9 @@ export default function CampaignDetailPage() {
                 size="sm"
                 className="h-9 gap-2 bg-gradient-brand text-primary-foreground"
                 disabled={actionBusy}
-                onClick={() => void submitCampaignAction("meta.activate_campaign", { campaign_id: c!.id }, `Ativar ${c!.name}`)}
+                onClick={openStartDialog}
               >
-                <Play className="h-3.5 w-3.5" /> Ativar
+                <Play className="h-3.5 w-3.5" /> Iniciar veiculação
               </Button>
             )}
             <Button variant="ghost" size="icon" className="h-9 w-9" asChild>
@@ -282,7 +377,7 @@ export default function CampaignDetailPage() {
                       <YAxis yAxisId="right" orientation="right" fontSize={11} tickLine={false} axisLine={false} stroke="hsl(var(--muted-foreground))" />
                       <Tooltip
                         contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }}
-                        formatter={(value: any, name: string) => {
+                        formatter={(value: unknown, name: string) => {
                           if (["spend", "cpl", "cpm", "cpr"].includes(name)) return [formatCurrency(Number(value) || 0), name.toUpperCase()];
                           return [formatNumber(Number(value) || 0), name];
                         }}
@@ -482,6 +577,91 @@ export default function CampaignDetailPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={startOpen} onOpenChange={setStartOpen}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Iniciar veiculação</DialogTitle>
+            <DialogDescription>
+              Escolha os conjuntos e anúncios que devem ser ativados com a campanha. A ação
+              só será executada depois da aprovação humana.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[52vh] space-y-4 overflow-y-auto pr-2">
+            <div>
+              <p className="mb-2 text-sm font-semibold">
+                Conjuntos ({startAdsetIds.size} selecionados)
+              </p>
+              <div className="space-y-1.5">
+                {adsets.filter((item) => item.status !== "ACTIVE").map((item) => (
+                  <label
+                    key={item.id}
+                    className="flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3"
+                  >
+                    <Checkbox
+                      checked={startAdsetIds.has(item.id)}
+                      disabled={item.status === "ARCHIVED" || item.status === "REVIEW"}
+                      onCheckedChange={() => toggleStartId(item.id, setStartAdsetIds)}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm">{item.name}</span>
+                    <CampaignStatusBadge status={item.status} />
+                  </label>
+                ))}
+                {adsets.every((item) => item.status === "ACTIVE") && (
+                  <p className="text-xs text-muted-foreground">Todos os conjuntos já estão ativos.</p>
+                )}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-semibold">
+                Anúncios ({startAdIds.size} selecionados)
+              </p>
+              <div className="space-y-1.5">
+                {ads.filter((item) => item.status !== "ACTIVE").map((item) => (
+                  <label
+                    key={item.id}
+                    className="flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3"
+                  >
+                    <Checkbox
+                      checked={startAdIds.has(item.id)}
+                      disabled={item.status === "ARCHIVED" || item.status === "REVIEW"}
+                      onCheckedChange={() => toggleStartId(item.id, setStartAdIds)}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm">{item.name}</span>
+                    <CampaignStatusBadge status={item.status} />
+                  </label>
+                ))}
+                {ads.every((item) => item.status === "ACTIVE") && (
+                  <p className="text-xs text-muted-foreground">Todos os anúncios já estão ativos.</p>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              variant="outline"
+              disabled={actionBusy}
+              onClick={async () => {
+                await submitCampaignAction(
+                  "meta.activate_campaign",
+                  { campaign_id: c!.id },
+                  `Ativar somente a campanha ${c!.name}`,
+                );
+                setStartOpen(false);
+              }}
+            >
+              Ativar somente campanha
+            </Button>
+            <Button
+              className="bg-gradient-brand text-primary-foreground"
+              disabled={actionBusy}
+              onClick={() => void startCampaignStructure()}
+            >
+              {actionBusy ? "Enviando…" : "Enviar para aprovação"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

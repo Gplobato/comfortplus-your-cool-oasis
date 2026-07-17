@@ -2,7 +2,11 @@
 // GET ?organization_id=...&status=ACTIVE&date_from=...&date_to=...&limit=200
 // Optional: campaign_id=... → single campaign + daily series
 import { corsHeaders, json, requireOrgMember, requireUser } from "../_shared/meta-auth.ts";
-import { loadActiveSelection, sanitizeMetaError } from "../_shared/meta-ids.ts";
+import {
+  loadActiveSelection,
+  normalizeMetaAdAccountId,
+  sanitizeMetaError,
+} from "../_shared/meta-ids.ts";
 import {
   buildCreativesPayload,
   buildLocalOnlyCreatives,
@@ -300,9 +304,40 @@ Deno.serve(async (req) => {
 
   // ---- Single campaign detail mode (+ adsets + ads hierarchy) ----
   if (campaignId) {
+    if (!/^\d+$/.test(campaignId)) {
+      return json({
+        error: "invalid_campaign_id",
+        message: "O identificador da campanha não é válido.",
+        request_id: requestId,
+      }, 400);
+    }
     try {
+      let campObj: any;
+      try {
+        campObj = await gfetch(
+          `${GRAPH}/${campaignId}?fields=id,account_id,name,objective,effective_status,status,daily_budget,lifetime_budget,budget_remaining,updated_time,created_time,start_time,stop_time&access_token=${token}`,
+        );
+      } catch (directError) {
+        // Some Meta tokens can list account campaigns but reject direct object reads.
+        // Fall back to the account edge before declaring the campaign missing.
+        const accountCampaigns = await gfetchAll(
+          `${GRAPH}/${acct}/campaigns?fields=id,account_id,name,objective,effective_status,status,daily_budget,lifetime_budget,budget_remaining,updated_time,created_time,start_time,stop_time&limit=100&access_token=${token}`,
+          8,
+        );
+        campObj = accountCampaigns.find((campaign: any) => String(campaign.id) === campaignId);
+        if (!campObj) throw new Error("campaign_not_in_selected_account");
+        warnings.push(`direct_campaign_read: ${sanitizeMetaError(directError)}`);
+      }
+
+      const campaignAccountId = normalizeMetaAdAccountId(String(campObj.account_id ?? ""));
+      if (
+        campaignAccountId &&
+        campaignAccountId !== normalizeMetaAdAccountId(sel.account.account_id)
+      ) {
+        throw new Error("campaign_not_in_selected_account");
+      }
+
       const [
-        campRes,
         insRes,
         seriesRes,
         adsetsRes,
@@ -310,9 +345,6 @@ Deno.serve(async (req) => {
         adsRes,
         adInsRes,
       ] = await Promise.allSettled([
-        gfetch(
-          `${GRAPH}/${campaignId}?fields=id,name,objective,effective_status,status,daily_budget,lifetime_budget,budget_remaining,updated_time,created_time,start_time,stop_time&access_token=${token}`,
-        ),
         gfetch(
           `${GRAPH}/${campaignId}/insights?fields=${CHILD_INSIGHTS_FIELDS}&time_range=${timeRange}&access_token=${token}`,
         ),
@@ -336,12 +368,6 @@ Deno.serve(async (req) => {
           4,
         ),
       ]);
-
-      if (campRes.status !== "fulfilled") {
-        throw campRes.reason;
-      }
-
-      const campObj = campRes.value;
       const objective = normalizeObjective(campObj.objective);
 
       // ABO budget rollup from adsets list
@@ -468,7 +494,15 @@ Deno.serve(async (req) => {
         synced_at: new Date().toISOString(),
       });
     } catch (e) {
-      return json({ error: "campaign_fetch_failed", message: sanitizeMetaError(e), request_id: requestId }, 502);
+      const rawMessage = e instanceof Error ? e.message : String(e);
+      const missing = rawMessage === "campaign_not_in_selected_account";
+      return json({
+        error: missing ? "campaign_not_in_selected_account" : "campaign_fetch_failed",
+        message: missing
+          ? "A campanha não pertence à conta de anúncios selecionada ou não está mais disponível."
+          : sanitizeMetaError(e),
+        request_id: requestId,
+      }, missing ? 404 : 502);
     }
   }
 

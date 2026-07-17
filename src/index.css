@@ -65,14 +65,14 @@
     --shadow-lg: 0 12px 32px -8px hsl(222 47% 11% / 0.10), 0 4px 12px -4px hsl(222 47% 11% / 0.06);
     --shadow-brand: 0 8px 24px -8px hsl(217 91% 60% / 0.35);
 
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 222 30% 25%;
-    --sidebar-primary: 217 91% 60%;
+    --sidebar-background: 271 64% 7%;
+    --sidebar-foreground: 270 20% 92%;
+    --sidebar-primary: 210 100% 66%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 40% 96%;
-    --sidebar-accent-foreground: 222 47% 11%;
-    --sidebar-border: 214 32% 91%;
-    --sidebar-ring: 217 91% 60%;
+    --sidebar-accent: 270 28% 16%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 269 30% 20%;
+    --sidebar-ring: 217 91% 65%;
   }
 
   .dark {
@@ -173,6 +173,14 @@
   .shadow-card-md { box-shadow: var(--shadow-md); }
   .shadow-card-lg { box-shadow: var(--shadow-lg); }
   .shadow-brand { box-shadow: var(--shadow-brand); }
+  .proads-sidebar-surface {
+    background-color: hsl(271 64% 7%);
+    background-image:
+      linear-gradient(180deg, hsl(271 64% 7% / 0.72), hsl(271 72% 5% / 0.94)),
+      url("./assets/sidebar-bg.jpg");
+    background-position: center top;
+    background-size: cover;
+  }
   .scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 999px; }
   .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }

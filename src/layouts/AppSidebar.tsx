@@ -26,7 +26,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import proadsLogo from "@/assets/proads-logo.png";
+import proadsSidebarWordmark from "@/assets/proads-sidebar-wordmark.png";
+import proadsSidebarMark from "@/assets/proads-sidebar-mark.png";
 
 const nav = [
   { title: "Visão Geral", url: "/dashboard", icon: LayoutDashboard },
@@ -47,15 +48,21 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
-      <SidebarHeader className="px-3 py-4">
+    <Sidebar
+      collapsible="icon"
+      className="border-r border-white/10"
+      innerClassName="proads-sidebar-surface"
+    >
+      <SidebarHeader className="px-3 py-3">
         <NavLink to="/dashboard" className={cn("flex items-center", collapsed ? "justify-center" : "px-1")}>
           <img
-            src={proadsLogo}
+            src={collapsed ? proadsSidebarMark : proadsSidebarWordmark}
             alt="ProAds Marketing OS"
             className={cn(
               "object-contain",
-              collapsed ? "h-9 w-9" : "h-9 w-auto max-w-[170px]",
+              collapsed
+                ? "h-9 w-9 rounded-lg object-cover"
+                : "h-14 w-full max-w-[205px] object-left",
             )}
           />
         </NavLink>
@@ -64,7 +71,7 @@ export function AppSidebar() {
       <SidebarContent className="px-2">
         <SidebarGroup>
           {!collapsed && (
-            <SidebarGroupLabel className="px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            <SidebarGroupLabel className="px-3 text-[10px] font-semibold uppercase tracking-widest text-white/45">
               Navegação
             </SidebarGroupLabel>
           )}
@@ -80,16 +87,17 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       asChild
                       isActive={active}
+                      tooltip={item.title}
                       className={cn(
-                        "h-10 rounded-lg font-medium transition-colors",
+                        "relative h-10 rounded-lg border border-transparent font-medium text-white/75 transition-all hover:text-white focus-visible:ring-white/40",
                         active
-                          ? "bg-gradient-brand-soft text-primary hover:bg-gradient-brand-soft"
-                          : "text-sidebar-foreground/80 hover:bg-sidebar-accent",
+                          ? "border-white/10 bg-white/[0.12] text-white shadow-sm backdrop-blur-sm before:absolute before:bottom-2 before:left-0 before:top-2 before:w-[3px] before:rounded-r-full before:bg-gradient-to-b before:from-blue-400 before:to-violet-500 hover:bg-white/[0.16]"
+                          : "hover:border-white/[0.06] hover:bg-white/[0.08]",
                       )}
                     >
                       <NavLink to={item.url} className="flex items-center gap-3">
                         <item.icon
-                          className={cn("h-[18px] w-[18px] shrink-0", active && "text-primary")}
+                          className={cn("h-[18px] w-[18px] shrink-0", active && "text-blue-300")}
                         />
                         {!collapsed && (
                           <span className="flex-1 truncate text-sm">{item.title}</span>
@@ -110,7 +118,7 @@ export function AppSidebar() {
           target="_blank"
           rel="noopener noreferrer"
           className={cn(
-            "group flex items-center gap-2.5 rounded-lg bg-gradient-brand px-3 py-2.5 text-primary-foreground shadow-brand transition-opacity hover:opacity-95",
+            "group flex items-center gap-2.5 rounded-lg border border-white/15 bg-white/[0.08] px-3 py-2.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-white/[0.15]",
             collapsed && "justify-center px-0",
           )}
         >

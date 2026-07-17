@@ -1,17 +1,23 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 export default function OnboardingPage() {
   const [name, setName] = useState("Obras Timelapse (MB Group)");
   const [saving, setSaving] = useState(false);
+  const { user, loading: authLoading } = useAuth();
   const { createOrganization } = useOrganization();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!authLoading && !user) navigate("/login", { replace: true });
+  }, [authLoading, navigate, user]);
 
   const handleCreate = async () => {
     if (!name.trim()) return;

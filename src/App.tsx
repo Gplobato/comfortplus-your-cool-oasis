@@ -8,6 +8,10 @@ import { OrganizationProvider } from "./contexts/OrganizationContext";
 import { MetaIntegrationProvider } from "./contexts/MetaIntegrationContext";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import LoginPage from "./pages/auth/LoginPage";
+import SignUpPage from "./pages/auth/SignUpPage";
+import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
+import AuthConfirmPage from "./pages/auth/AuthConfirmPage";
 import OnboardingPage from "./pages/auth/OnboardingPage";
 import AppLayout from "./layouts/AppLayout";
 import DashboardPage from "./pages/proads/DashboardPage";
@@ -44,6 +48,10 @@ const App = () => (
               <Sonner position="top-right" richColors />
               <Routes>
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/cadastro" element={<SignUpPage />} />
+                <Route path="/esqueci-senha" element={<ForgotPasswordPage />} />
+                <Route path="/redefinir-senha" element={<ResetPasswordPage />} />
+                <Route path="/auth/confirm" element={<AuthConfirmPage />} />
                 <Route path="/onboarding" element={<OnboardingPage />} />
                 <Route
                   path="/"

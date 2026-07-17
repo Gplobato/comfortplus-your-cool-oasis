@@ -16,6 +16,15 @@ export type MetaFriendlyError = {
 
 const MAP: Array<{ match: RegExp; err: MetaFriendlyError }> = [
   {
+    match: /campaign_not_in_selected_account|invalid_campaign_id/i,
+    err: {
+      kind: "no_account_selected",
+      title: "Campanha indisponível nesta conta",
+      description:
+        "A campanha não pertence à conta de anúncios selecionada ou não está mais disponível.",
+    },
+  },
+  {
     match: /token[_ ]?expired|oauth.*expired|invalid[_ ]oauth|reautenticad|reconecte/i,
     err: {
       kind: "token_expired",

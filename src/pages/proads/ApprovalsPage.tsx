@@ -26,7 +26,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { formatDateTime } from "@/lib/format";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { executeMetaProposal } from "@/lib/meta-actions";
+import { executeMetaProposal, reviewMetaProposal } from "@/lib/meta-actions";
 
 type Proposal = Database["public"]["Tables"]["action_proposals"]["Row"];
 type Risk = Database["public"]["Enums"]["risk_level"];
@@ -123,45 +123,22 @@ export default function ApprovalsPage() {
     if (!active || !action || !activeOrg) return;
     setBusy(true);
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      const uid = userData.user?.id ?? null;
-      const nextStatus = action === "approve" ? "approved" : "rejected";
-      const { error } = await supabase
-        .from("action_proposals")
-        .update({
-          status: nextStatus,
-          reviewed_at: new Date().toISOString(),
-          reviewed_by_user_id: uid,
-          explanation: note
-            ? `${active.explanation ?? ""}\n\n[Revisão] ${note}`.trim()
-            : active.explanation,
-        })
-        .eq("id", active.id)
-        .eq("organization_id", activeOrg.id);
-      if (error) throw error;
-
-      if (uid) {
-        await supabase.from("audit_logs").insert({
-          organization_id: activeOrg.id,
-          user_id: uid,
-          event_type: action === "approve" ? "proposal.approved" : "proposal.rejected",
-          entity_type: "action_proposal",
-          entity_id: active.id,
-          action: nextStatus,
-          sanitized_metadata: {
-            title: active.title,
-            action_type: active.action_type,
-            note: note || null,
-          },
-        });
-      }
-
-      if (action === "approve") {
-        await runProposal(active);
-      } else {
+      const result = await reviewMetaProposal({
+        organizationId: activeOrg.id,
+        proposalId: active.id,
+        decision: action,
+        note: note || undefined,
+      });
+      if (action === "reject") {
         toast.error(`Rejeitado: ${active.title}`);
+      } else {
+        toast.success(
+          result.status === "partially_completed"
+            ? "Execução parcial; revise o Histórico"
+            : `Concluído na Meta: ${active.title}`,
+        );
       }
-
+      await load();
       setActive(null);
       setAction(null);
       setNote("");

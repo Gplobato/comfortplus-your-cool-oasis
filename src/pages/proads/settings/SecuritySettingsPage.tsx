@@ -1,76 +1,128 @@
-import { Copy, Eye, EyeOff, KeyRound, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { Loader2, LockKeyhole, ShieldCheck, UserRound } from "lucide-react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/proads/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-
-const mask = (v: string, revealed: boolean) => (revealed ? v : `${v.slice(0, 6)}${"•".repeat(20)}${v.slice(-4)}`);
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  friendlyAuthError,
+  isStrongPassword,
+  isValidUsername,
+  normalizeUsername,
+} from "@/lib/auth";
 
 export default function SecuritySettingsPage() {
-  const [show, setShow] = useState(false);
-  const token = "sk_live_51NpQxT7HKzXyz1234567890abcdefGHIJKL";
+  const { user, updatePassword } = useAuth();
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("profiles")
+      .select("full_name, username")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setFullName(data?.full_name || user.user_metadata?.full_name || "");
+        setUsername(data?.username || user.user_metadata?.username || "");
+      });
+  }, [user]);
+
+  const saveProfile = async () => {
+    if (!user || !isValidUsername(username)) return;
+    setProfileBusy(true);
+    const normalized = normalizeUsername(username);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ full_name: fullName.trim(), username: normalized })
+      .eq("id", user.id);
+    if (error) {
+      toast.error("Não foi possível salvar o perfil", { description: error.message });
+    } else {
+      await supabase.auth.updateUser({
+        data: { full_name: fullName.trim(), username: normalized },
+      });
+      toast.success("Perfil atualizado");
+    }
+    setProfileBusy(false);
+  };
+
+  const changePassword = async () => {
+    if (!isStrongPassword(password) || password !== confirm) return;
+    setPasswordBusy(true);
+    try {
+      await updatePassword(password);
+      setPassword("");
+      setConfirm("");
+      toast.success("Senha atualizada");
+    } catch (error) {
+      toast.error(friendlyAuthError(error));
+    } finally {
+      setPasswordBusy(false);
+    }
+  };
 
   return (
     <>
-      <PageHeader title="Segurança" description="Autenticação, sessões, chaves de API e limites financeiros." />
+      <PageHeader title="Conta e segurança" description="Perfil, login e proteção da sua conta ProAds." />
       <div className="space-y-4 p-4 md:p-8">
         <Card className="p-5 shadow-card">
-          <div className="flex items-center justify-between">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="rounded-xl bg-blue-soft p-2.5 text-primary"><UserRound className="h-5 w-5" /></div>
             <div>
-              <h3 className="font-display font-bold">Autenticação em dois fatores</h3>
-              <p className="text-xs text-muted-foreground">Adicione uma camada extra de proteção via app autenticador.</p>
+              <h3 className="font-display font-bold">Perfil de acesso</h3>
+              <p className="text-xs text-muted-foreground">Seu usuário pode ser usado no lugar do e-mail para entrar.</p>
             </div>
-            <Switch defaultChecked />
           </div>
-        </Card>
-
-        <Card className="p-5 shadow-card">
-          <h3 className="font-display font-bold">Chaves de API</h3>
-          <p className="text-xs text-muted-foreground">Chaves usadas por integrações externas. Nunca são exibidas por completo.</p>
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/40 p-3">
-              <KeyRound className="h-4 w-4 text-muted-foreground" />
-              <Input readOnly value={mask(token, show)} className="border-0 bg-transparent font-mono text-xs shadow-none focus-visible:ring-0" />
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShow(!show)}>{show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { navigator.clipboard.writeText(token); toast.success("Copiado"); }}><Copy className="h-3.5 w-3.5" /></Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8"><RefreshCw className="h-3.5 w-3.5" /></Button>
-            </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div><Label>Nome</Label><Input className="mt-1.5" value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
             <div>
-              <Label>Webhook secret</Label>
-              <Input readOnly className="mt-1.5 font-mono text-xs" value="whsec_••••••••••••••••7d3a" />
+              <Label>Usuário</Label>
+              <Input className="mt-1.5" value={username} onChange={(e) => setUsername(normalizeUsername(e.target.value))} />
+              {username && !isValidUsername(username) && <p className="mt-1 text-xs text-destructive">Usuário inválido.</p>}
+            </div>
+            <div className="md:col-span-2"><Label>E-mail</Label><Input className="mt-1.5" readOnly value={user?.email ?? ""} /></div>
+          </div>
+          <Button className="mt-4" onClick={() => void saveProfile()} disabled={profileBusy || !isValidUsername(username)}>
+            {profileBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar perfil"}
+          </Button>
+        </Card>
+
+        <Card className="p-5 shadow-card">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="rounded-xl bg-violet-soft p-2.5 text-accent"><LockKeyhole className="h-5 w-5" /></div>
+            <div>
+              <h3 className="font-display font-bold">Alterar senha</h3>
+              <p className="text-xs text-muted-foreground">Use 8+ caracteres com maiúscula, minúscula, número e símbolo.</p>
             </div>
           </div>
-        </Card>
-
-        <Card className="p-5 shadow-card">
-          <h3 className="font-display font-bold">Limites financeiros</h3>
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            <div><Label>Máximo por campanha</Label><Input className="mt-1.5" defaultValue="R$ 500/dia" /></div>
-            <div><Label>Máximo por conta/mês</Label><Input className="mt-1.5" defaultValue="R$ 50.000" /></div>
-            <div><Label>% máx. de aumento sem aprovação</Label><Input className="mt-1.5" defaultValue="10%" /></div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div><Label>Nova senha</Label><Input className="mt-1.5" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+            <div><Label>Confirmar senha</Label><Input className="mt-1.5" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div>
           </div>
+          <Button className="mt-4" onClick={() => void changePassword()} disabled={passwordBusy || !isStrongPassword(password) || password !== confirm}>
+            {passwordBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Atualizar senha"}
+          </Button>
         </Card>
 
         <Card className="p-5 shadow-card">
-          <h3 className="font-display font-bold">Sessões ativas</h3>
-          <div className="mt-3 space-y-2 text-sm">
-            {[
-              { d: "Chrome / macOS", ip: "191.32.14.22", loc: "São Paulo, BR", now: true },
-              { d: "iPhone Safari", ip: "191.32.14.90", loc: "São Paulo, BR", now: false },
-            ].map((s) => (
-              <div key={s.ip} className="flex items-center justify-between rounded-lg bg-secondary/40 p-3">
-                <div>
-                  <p className="font-medium">{s.d}</p>
-                  <p className="text-xs text-muted-foreground">{s.ip} · {s.loc}</p>
-                </div>
-                {s.now ? <Badge className="border-0 bg-success-soft text-success">Atual</Badge> : <Button size="sm" variant="ghost" className="text-destructive">Encerrar</Button>}
-              </div>
-            ))}
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-success-soft p-2.5 text-success"><ShieldCheck className="h-5 w-5" /></div>
+            <div className="flex-1">
+              <h3 className="font-display font-bold">Sessão atual</h3>
+              <p className="text-xs text-muted-foreground">{user?.email}</p>
+            </div>
+            <Badge className="border-0 bg-success-soft text-success">Ativa</Badge>
           </div>
         </Card>
       </div>

@@ -1,7 +1,7 @@
-import { Plus } from "lucide-react";
+import { Loader2, Users } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/proads/PageHeader";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -12,38 +12,104 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { supabase } from "@/integrations/supabase/client";
+import { useOrganization } from "@/contexts/OrganizationContext";
 
-const users = [
-  { name: "Rafael Gomes", email: "rafael@promonitor.com.br", role: "Administrador", status: "Ativo", last: "há 2min" },
-  { name: "Juliana Alves", email: "juliana@promonitor.com.br", role: "Gestor", status: "Ativo", last: "há 4h" },
-  { name: "Lucas Silva", email: "lucas@promonitor.com.br", role: "Analista", status: "Ativo", last: "há 1d" },
-  { name: "Ana Souza", email: "ana@promonitor.com.br", role: "Criativo", status: "Convidado", last: "—" },
-  { name: "Bruno Lima", email: "bruno@promonitor.com.br", role: "Aprovador", status: "Ativo", last: "há 3h" },
-];
+type MemberRow = {
+  id: string;
+  name: string;
+  username: string | null;
+  email: string;
+  roles: string[];
+  joinedAt: string;
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Administrador",
+  manager: "Gestor",
+  analyst: "Analista",
+  creative: "Criativo",
+  approver: "Aprovador",
+  viewer: "Visualizador",
+};
 
 export default function UsersSettingsPage() {
+  const { activeOrg } = useOrganization();
+  const [users, setUsers] = useState<MemberRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (!activeOrg) return;
+    setLoading(true);
+    const { data: memberships } = await supabase
+      .from("organization_members")
+      .select("user_id, created_at")
+      .eq("organization_id", activeOrg.id);
+    const ids = (memberships ?? []).map((item) => item.user_id);
+    if (!ids.length) {
+      setUsers([]);
+      setLoading(false);
+      return;
+    }
+    const [{ data: profiles }, { data: roles }] = await Promise.all([
+      supabase.from("profiles").select("id, full_name, username, email").in("id", ids),
+      supabase.from("user_roles").select("user_id, role").eq("organization_id", activeOrg.id),
+    ]);
+    const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+    const rolesById = new Map<string, string[]>();
+    for (const role of roles ?? []) {
+      const list = rolesById.get(role.user_id) ?? [];
+      list.push(role.role);
+      rolesById.set(role.user_id, list);
+    }
+    setUsers((memberships ?? []).map((membership) => {
+      const profile = profileById.get(membership.user_id);
+      return {
+        id: membership.user_id,
+        name: profile?.full_name || profile?.username || "Usuário",
+        username: profile?.username || null,
+        email: profile?.email || "—",
+        roles: rolesById.get(membership.user_id) ?? [],
+        joinedAt: membership.created_at,
+      };
+    }));
+    setLoading(false);
+  }, [activeOrg]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
   return (
     <>
       <PageHeader
         title="Usuários & permissões"
-        description="Gerencie a equipe e os níveis de acesso na plataforma."
-        actions={<Button size="sm" className="gap-2 bg-gradient-brand text-primary-foreground"><Plus className="h-3.5 w-3.5" /> Convidar</Button>}
+        description="Membros reais com acesso à organização selecionada."
       />
       <div className="p-4 md:p-8">
         <Card className="shadow-card">
-          <Table>
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Carregando membros…
+            </div>
+          ) : users.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 p-10 text-center text-sm text-muted-foreground">
+              <Users className="h-6 w-6" />
+              Nenhum membro encontrado.
+            </div>
+          ) : <Table>
             <TableHeader>
               <TableRow className="border-border">
                 <TableHead>Usuário</TableHead>
                 <TableHead>E-mail</TableHead>
                 <TableHead>Perfil</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Último acesso</TableHead>
+                <TableHead>Usuário</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {users.map((u) => (
-                <TableRow key={u.email} className="border-border">
+                <TableRow key={u.id} className="border-border">
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Avatar className="h-8 w-8"><AvatarFallback className="bg-gradient-brand text-xs text-white">{u.name.split(" ").map((s) => s[0]).join("").slice(0, 2)}</AvatarFallback></Avatar>
@@ -51,13 +117,19 @@ export default function UsersSettingsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
-                  <TableCell><Badge variant="outline">{u.role}</Badge></TableCell>
-                  <TableCell><Badge className={u.status === "Ativo" ? "bg-success-soft text-success border-0" : "bg-warning-soft text-warning border-0"}>{u.status}</Badge></TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{u.last}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {u.roles.length
+                        ? u.roles.map((role) => <Badge key={role} variant="outline">{ROLE_LABELS[role] || role}</Badge>)
+                        : <Badge variant="outline">Membro</Badge>}
+                    </div>
+                  </TableCell>
+                  <TableCell><Badge className="border-0 bg-success-soft text-success">Ativo</Badge></TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{u.username ? `@${u.username}` : "—"}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table>}
         </Card>
       </div>
     </>

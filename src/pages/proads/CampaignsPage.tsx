@@ -115,8 +115,9 @@ export default function CampaignsPage() {
     const dir = sortDir === "asc" ? 1 : -1;
     return [...list].sort((a, b) => {
       if (sortKey === "name") return dir * a.name.localeCompare(b.name, "pt-BR");
-      const av = Number((a as any)[sortKey] ?? 0);
-      const bv = Number((b as any)[sortKey] ?? 0);
+      const numericKey = sortKey as Exclude<SortKey, "name">;
+      const av = Number(a[numericKey] ?? 0);
+      const bv = Number(b[numericKey] ?? 0);
       return dir * (av - bv);
     });
   }, [items, q, platform, sortKey, sortDir]);
@@ -424,7 +425,7 @@ export default function CampaignsPage() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell><PlatformBadge platform={c.platform as any} /></TableCell>
+                        <TableCell><PlatformBadge platform={c.platform} /></TableCell>
                         {show("objective") && <TableCell className="text-sm capitalize">{c.objective || "—"}</TableCell>}
                         {show("dailyBudget") && (
                           <TableCell className="text-right text-sm">
@@ -462,9 +463,15 @@ export default function CampaignsPage() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => navigate(`/campanhas/${c.id}`)}>Visualizar</DropdownMenuItem>
                               <DropdownMenuItem
-                                onClick={() => void changeCampaignStatus(c, c.status === "ACTIVE" ? "PAUSED" : "ACTIVE")}
+                                onClick={() => {
+                                  if (c.status === "ACTIVE") {
+                                    void changeCampaignStatus(c, "PAUSED");
+                                  } else {
+                                    navigate(`/campanhas/${c.id}`);
+                                  }
+                                }}
                               >
-                                {c.status === "ACTIVE" ? "Pausar agora" : "Solicitar ativação"}
+                                {c.status === "ACTIVE" ? "Pausar agora" : "Configurar início"}
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem className="gap-2" asChild>

@@ -26,7 +26,12 @@ const PAUSED_DRAFT_TOOLS = new Set([
   "meta.create_campaign_structure",
   "meta.publish_creative_paused",
 ]);
-const ACTIVATION_TOOLS = new Set(["meta.activate_campaign", "meta.activate_adset", "meta.activate_ad"]);
+const ACTIVATION_TOOLS = new Set([
+  "meta.activate_campaign",
+  "meta.activate_adset",
+  "meta.activate_ad",
+  "meta.activate_campaign_structure",
+]);
 const BUDGET_TOOLS = new Set(["meta.update_campaign_budget", "meta.update_adset_budget"]);
 
 export async function loadMetaActionPolicy(admin: any, organizationId: string): Promise<MetaActionPolicy> {

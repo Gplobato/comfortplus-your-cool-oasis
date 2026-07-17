@@ -47,6 +47,30 @@ export async function executeMetaProposal(organizationId: string, proposalId: st
   return data as MetaActionResponse;
 }
 
+export async function reviewMetaProposal(input: {
+  organizationId: string;
+  proposalId: string;
+  decision: "approve" | "reject";
+  note?: string;
+}) {
+  const { data, error } = await supabase.functions.invoke("meta-connection", {
+    body: {
+      action: "review_proposal",
+      organization_id: input.organizationId,
+      proposal_id: input.proposalId,
+      decision: input.decision,
+      note: input.note,
+    },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.detail || data.message || data.error);
+  return data as MetaActionResponse | {
+    ok: true;
+    status: "rejected";
+    proposal_id: string;
+  };
+}
+
 export function metaActionToastMessage(result: MetaActionResponse) {
   if (result.status === "awaiting_approval") return "Proposta enviada para Aprovações";
   if (result.status === "partially_completed") return "Ação parcialmente concluída; revise o histórico";

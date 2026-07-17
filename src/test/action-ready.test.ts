@@ -54,6 +54,7 @@ describe("política conservadora do executor", () => {
 
   it("exige aprovação para ativação e orçamento", () => {
     expect(actionPolicyDecision("meta.activate_campaign", CONSERVATIVE_META_POLICY).requiresApproval).toBe(true);
+    expect(actionPolicyDecision("meta.activate_campaign_structure", CONSERVATIVE_META_POLICY).requiresApproval).toBe(true);
     expect(actionPolicyDecision("meta.update_adset_budget", CONSERVATIVE_META_POLICY).requiresApproval).toBe(true);
   });
 

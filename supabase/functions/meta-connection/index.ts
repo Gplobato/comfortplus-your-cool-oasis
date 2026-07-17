@@ -37,6 +37,17 @@ async function loadStatus(admin: any, orgId: string) {
   return { connected: true as const, connection: conn, assets: assets ?? [] };
 }
 
+async function canReviewProposals(admin: any, orgId: string, userId: string) {
+  const { data } = await admin
+    .from("user_roles")
+    .select("id")
+    .eq("organization_id", orgId)
+    .eq("user_id", userId)
+    .in("role", ["admin", "approver"])
+    .limit(1);
+  return Array.isArray(data) && data.length > 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -67,6 +78,70 @@ Deno.serve(async (req) => {
 
   if (action === "status") {
     return json(await loadStatus(admin, orgId));
+  }
+
+  if (action === "review_proposal") {
+    if (!(await canReviewProposals(admin, orgId, ctx.userId))) {
+      return json({ error: "proposal_review_forbidden" }, 403);
+    }
+    const proposalId = String(body.proposal_id ?? "");
+    const decision = String(body.decision ?? "");
+    const note = String(body.note ?? "").trim().slice(0, 1000);
+    if (!proposalId) return json({ error: "proposal_id_required" }, 400);
+    if (!["approve", "reject"].includes(decision)) {
+      return json({ error: "invalid_review_decision" }, 400);
+    }
+    const { data: proposal, error: proposalError } = await admin
+      .from("action_proposals")
+      .select("id,title,action_type,explanation,status")
+      .eq("id", proposalId)
+      .eq("organization_id", orgId)
+      .maybeSingle();
+    if (proposalError) return json({ error: "proposal_load_failed" }, 500);
+    if (!proposal) return json({ error: "proposal_not_found" }, 404);
+    if (proposal.status !== "awaiting_approval") {
+      return json({ error: "proposal_already_reviewed", detail: proposal.status }, 409);
+    }
+    const nextStatus = decision === "approve" ? "approved" : "rejected";
+    const { error: updateError } = await admin
+      .from("action_proposals")
+      .update({
+        status: nextStatus,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by_user_id: ctx.userId,
+        explanation: note
+          ? `${proposal.explanation ?? ""}\n\n[Revisão] ${note}`.trim()
+          : proposal.explanation,
+      })
+      .eq("id", proposalId)
+      .eq("organization_id", orgId);
+    if (updateError) return json({ error: "proposal_review_failed" }, 500);
+    await admin.from("audit_logs").insert({
+      organization_id: orgId,
+      user_id: ctx.userId,
+      event_type: decision === "approve" ? "proposal.approved" : "proposal.rejected",
+      entity_type: "action_proposal",
+      entity_id: proposalId,
+      action: nextStatus,
+      sanitized_metadata: {
+        title: proposal.title,
+        action_type: proposal.action_type,
+        note: note || null,
+      },
+    });
+    if (decision === "reject") return json({ ok: true, status: "rejected", proposal_id: proposalId });
+    const result = await executeApprovedProposal(admin, {
+      organizationId: orgId,
+      proposalId,
+      userId: ctx.userId,
+    });
+    if (!result.ok) {
+      return json(
+        { error: result.error, detail: result.detail, message: result.message },
+        result.status ?? 400,
+      );
+    }
+    return json(result);
   }
 
   // All other actions need an active connection
@@ -160,6 +235,9 @@ Deno.serve(async (req) => {
   }
 
   if (action === "execute_proposal") {
+    if (!(await canReviewProposals(admin, orgId, ctx.userId))) {
+      return json({ error: "proposal_execution_forbidden" }, 403);
+    }
     const proposalId = String(body.proposal_id ?? "");
     if (!proposalId) return json({ error: "proposal_id_required" }, 400);
     const result = await executeApprovedProposal(admin, {

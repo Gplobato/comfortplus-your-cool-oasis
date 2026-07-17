@@ -9,6 +9,7 @@ const GRAPH_VERSION = Deno.env.get("META_GRAPH_API_VERSION") ?? "v20.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const PAUSE_TOOLS = new Set(["meta.pause_ad", "meta.pause_adset", "meta.pause_campaign"]);
 const ACTIVATE_TOOLS = new Set(["meta.activate_ad", "meta.activate_adset", "meta.activate_campaign"]);
+const ACTIVATE_STRUCTURE_TOOLS = new Set(["meta.activate_campaign_structure"]);
 const BUDGET_TOOLS = new Set(["meta.update_campaign_budget", "meta.update_adset_budget"]);
 const CREATE_TOOLS = new Set([
   "meta.create_campaign",
@@ -17,7 +18,13 @@ const CREATE_TOOLS = new Set([
   "meta.create_campaign_structure",
   "meta.publish_creative_paused",
 ]);
-const SUPPORTED_TOOLS = new Set([...PAUSE_TOOLS, ...ACTIVATE_TOOLS, ...BUDGET_TOOLS, ...CREATE_TOOLS]);
+const SUPPORTED_TOOLS = new Set([
+  ...PAUSE_TOOLS,
+  ...ACTIVATE_TOOLS,
+  ...ACTIVATE_STRUCTURE_TOOLS,
+  ...BUDGET_TOOLS,
+  ...CREATE_TOOLS,
+]);
 const OBJECTIVES = new Set([
   "OUTCOME_AWARENESS",
   "OUTCOME_TRAFFIC",
@@ -101,11 +108,6 @@ function jsonParam(value: unknown, field: string) {
 
 function hasAdsManagement(scopes: string[] | null | undefined) {
   return !!scopes?.some((scope) => scope === "ads_management" || scope.includes("ads_management"));
-}
-
-async function hashKey(value: string) {
-  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(bytes)).map((item) => item.toString(16).padStart(2, "0")).join("");
 }
 
 function targetId(args: Json) {
@@ -240,6 +242,72 @@ async function executeTool(admin: any, selection: any, orgId: string, userId: st
     return { object_id: id, requested_status: status, verification };
   }
 
+  if (ACTIVATE_STRUCTURE_TOOLS.has(tool)) {
+    const campaignId = required(args.campaign_id, "campaign_id");
+    await assertOwnedObject(campaignId, selection.token, selection.account.account_id);
+    const adsetIds = Array.isArray(args.adset_ids)
+      ? [...new Set(args.adset_ids.map((id) => text(id)).filter(Boolean))]
+      : [];
+    const adIds = Array.isArray(args.ad_ids)
+      ? [...new Set(args.ad_ids.map((id) => text(id)).filter(Boolean))]
+      : [];
+    const expectedAccount = normalizeMetaAdAccountId(selection.account.account_id);
+
+    for (const adsetId of adsetIds) {
+      const adset = await graphJson(adsetId, selection.token, "GET", {
+        fields: "id,account_id,campaign_id,status,effective_status",
+      });
+      if (
+        normalizeMetaAdAccountId(String(adset.account_id ?? "")) !== expectedAccount ||
+        text(adset.campaign_id) !== campaignId
+      ) {
+        throw new Error("adset_not_owned_by_campaign");
+      }
+    }
+    for (const adId of adIds) {
+      const ad = await graphJson(adId, selection.token, "GET", {
+        fields: "id,account_id,campaign_id,adset_id,status,effective_status",
+      });
+      if (
+        normalizeMetaAdAccountId(String(ad.account_id ?? "")) !== expectedAccount ||
+        text(ad.campaign_id) !== campaignId ||
+        (adsetIds.length > 0 && !adsetIds.includes(text(ad.adset_id)))
+      ) {
+        throw new Error("ad_not_owned_by_campaign_structure");
+      }
+    }
+
+    const activated: Array<{ type: string; id: string; verification: unknown }> = [];
+    const failures: Array<{ type: string; id: string; error: string }> = [];
+    const activate = async (type: string, id: string) => {
+      try {
+        await graphJson(id, selection.token, "POST", { status: "ACTIVE" });
+        activated.push({ type, id, verification: await verifyObject(id, selection.token) });
+      } catch (error) {
+        failures.push({
+          type,
+          id,
+          error: text(error instanceof Error ? error.message : error, 300),
+        });
+      }
+    };
+
+    for (const adId of adIds) await activate("ad", adId);
+    for (const adsetId of adsetIds) await activate("adset", adsetId);
+    await activate("campaign", campaignId);
+
+    return {
+      object_id: campaignId,
+      campaign_id: campaignId,
+      activated,
+      failures,
+      partial_failure: failures.length > 0,
+      rollback_reference: failures.length > 0
+        ? "Revise os itens com falha; os itens ativados podem ser pausados individualmente."
+        : null,
+    };
+  }
+
   if (BUDGET_TOOLS.has(tool)) {
     const id = required(targetId(args), "target_id");
     const current = await assertOwnedObject(id, selection.token, selection.account.account_id);
@@ -354,7 +422,9 @@ export async function submitMetaAction(
   const decision = actionPolicyDecision(tool, policy);
   if (!decision.allowed) return { ok: false, error: "action_blocked_by_policy", detail: decision.reason, status: 403 };
 
-  const key = opts.idempotencyKey || await hashKey(`${opts.organizationId}:${tool}:${JSON.stringify(opts.arguments)}`);
+  // Repeated status changes are legitimate (pause → activate → pause). Only
+  // reuse an intent when the caller explicitly supplies a stable key.
+  const key = opts.idempotencyKey || crypto.randomUUID();
   const { data: existing } = await admin
     .from("action_proposals")
     .select("id,status,execution_mode")
