@@ -1,73 +1,62 @@
-# Welcome to your Lovable project
+# ProAds Marketing OS
 
-## Project info
+Aplicação React/Vite do ProAds. O frontend é estático e está preparado para
+Cloudflare Workers Static Assets. Autenticação, banco, Storage e Edge Functions
+continuam no Supabase.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Desenvolvimento
 
-## How can I edit this code?
-
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+Requisitos: Node.js 20 ou superior (Node 22 recomendado).
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+npm ci
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Crie o arquivo `.env` a partir de `.env.example` e informe:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-**Use GitHub Codespaces**
+## Validação
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```sh
+npm run build
+npm test
+npx tsc --noEmit
+```
 
-## What technologies are used for this project?
+## Cloudflare Workers
 
-This project is built with:
+O arquivo `wrangler.jsonc` publica a pasta `dist` como Static Assets e configura
+fallback nativo de SPA. Assim, rotas como `/dashboard`, `/campanhas/:id` e
+`/wizard` continuam funcionando quando abertas diretamente.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Git integration / Workers Builds
 
-## How can I deploy this project?
+1. No Cloudflare, escolha **Workers & Pages → Create → Import a repository**.
+2. Selecione este repositório e mantenha a branch de produção `main`.
+3. Use `npm run build` como comando de build.
+4. Use `npx wrangler deploy` como comando de deploy.
+5. Configure `NODE_VERSION=22`.
+6. Cadastre `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` no ambiente
+   de build.
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+O output é `dist`. O nome inicial do Worker é `proads-marketing-os` e pode ser
+alterado em `wrangler.jsonc` antes da primeira publicação.
 
-## Can I connect a custom domain to my Lovable project?
+### Publicação manual
 
-Yes, you can!
+```sh
+npm ci
+npm run deploy:cloudflare
+```
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+O arquivo `public/_headers` adiciona cabeçalhos de segurança e cache imutável
+para os assets versionados pelo Vite.
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## Backend
+
+Cloudflare hospeda somente o frontend. As migrations e funções em `supabase/`
+devem ser publicadas no projeto Supabase separadamente. Nenhuma chave secreta de
+servidor deve ser cadastrada como variável `VITE_*`.

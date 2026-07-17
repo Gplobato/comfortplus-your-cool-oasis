@@ -47,7 +47,7 @@ import {
   type WizardPreview,
   type WizardStyle,
 } from "@/lib/wizard";
-import proadsWordmark from "@/assets/proads-sidebar-wordmark.png";
+import proadsWizardLogo from "@/assets/proads-wizard-logo.png";
 import { toast } from "sonner";
 
 const LAST_FORM_STEP = 5;
@@ -170,7 +170,14 @@ export default function WizardPage() {
 
       <header className="relative z-20 mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-5 md:px-8">
         <Link to="/wizard" aria-label="ProAds">
-          <img src={proadsWordmark} alt="ProAds Marketing OS" className="h-11 w-auto max-w-[180px] object-contain object-left" />
+          <img
+            src={proadsWizardLogo}
+            alt="ProAds Marketing OS"
+            width={832}
+            height={253}
+            decoding="async"
+            className="h-12 w-auto max-w-[210px] object-contain object-left md:h-14"
+          />
         </Link>
         <Button variant="ghost" className="text-white/70 hover:bg-white/10 hover:text-white" onClick={() => navigate("/login")}>
           Já tenho conta
