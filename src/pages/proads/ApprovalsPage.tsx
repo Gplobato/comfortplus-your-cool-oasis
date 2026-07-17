@@ -226,7 +226,7 @@ export default function ApprovalsPage() {
                     <Badge className={cn("border-0 capitalize", riskStyle[a.risk_level])}>
                       Risco {a.risk_level}
                     </Badge>
-                    <Badge variant="outline">{String(a.status).replaceAll("_", " ")}</Badge>
+                    <Badge variant="outline">{String(a.status).split("_").join(" ")}</Badge>
                     {a.created_by_agent && (
                       <Badge variant="outline" className="text-[10px]">
                         Agente: {a.created_by_agent}
