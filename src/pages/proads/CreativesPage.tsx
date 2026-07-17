@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { Archive, Grid2x2, ImageIcon, List, Plus, Search, Sparkles } from "lucide-react";
+import { Archive, Grid2x2, ImageIcon, List, Plus, RefreshCw, Search, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/proads/PageHeader";
 import { EmptyState } from "@/components/proads/EmptyState";
 import { Card } from "@/components/ui/card";
@@ -29,7 +29,7 @@ export default function CreativesPage() {
   const [view, setView] = useState<"grid" | "list">("grid");
   const [includeArchived, setIncludeArchived] = useState(false);
   const query = useMetaCreatives({ includeArchived });
-  const items = query.data?.creatives ?? [];
+  const items = useMemo(() => query.data?.creatives ?? [], [query.data?.creatives]);
 
   const filtered = useMemo(() => items.filter((creative) => {
     const needle = q.trim().toLowerCase();
@@ -112,10 +112,13 @@ export default function CreativesPage() {
           </ToggleGroup>
         </Card>
 
-        {query.isLoading ? (
-          <div className="p-10 text-center text-sm text-muted-foreground">Carregando sua galeria…</div>
+        {query.isPending && query.fetchStatus === "fetching" ? (
+          <div className="flex items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            Carregando sua galeria…
+          </div>
         ) : query.error ? (
-          <Card className="space-y-2 border-destructive/40 bg-destructive/5 p-4 text-sm">
+          <Card className="space-y-3 border-destructive/40 bg-destructive/5 p-4 text-sm">
             <p className="font-semibold">Não foi possível carregar a galeria</p>
             <p className="text-muted-foreground">{query.error.message}</p>
             {String(query.error.message).includes("creatives") && (
@@ -124,6 +127,16 @@ export default function CreativesPage() {
                 `ensure_creatives_gallery`, recarregue esta página.
               </p>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              disabled={query.isFetching}
+              onClick={() => void query.refetch()}
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", query.isFetching && "animate-spin")} />
+              Tentar novamente
+            </Button>
           </Card>
         ) : filtered.length === 0 ? (
           <EmptyState
@@ -168,10 +181,10 @@ export default function CreativesPage() {
 function CreativeThumb({ creative, className }: { creative: LibraryCreative; className?: string }) {
   const url = creative.signed_url || creative.media_url || creative.thumbnail_url;
   if (url && creative.type === "video") {
-    return <video src={url} muted className={cn("shrink-0 rounded-md bg-muted object-cover", className)} />;
+    return <video src={url} muted preload="metadata" className={cn("shrink-0 rounded-md bg-muted object-cover", className)} />;
   }
   if (url) {
-    return <img src={url} alt="" className={cn("shrink-0 rounded-md bg-muted object-cover", className)} />;
+    return <img src={url} alt="" loading="lazy" decoding="async" className={cn("shrink-0 rounded-md bg-muted object-cover", className)} />;
   }
   return (
     <div className={cn("flex shrink-0 items-center justify-center rounded-md bg-muted", className)}>

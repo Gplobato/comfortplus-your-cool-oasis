@@ -1,6 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export const CREATIVE_BUCKET = "creative-assets";
+const GALLERY_QUERY_TIMEOUT_MS = 12_000;
+const SIGNED_URL_TIMEOUT_MS = 8_000;
 
 export type OwnedCreative = {
   id: string;
@@ -35,6 +37,20 @@ function sanitizeFileName(name: string) {
   return name.normalize("NFKD").replace(/[^\w.-]+/g, "-").replace(/-+/g, "-").toLowerCase();
 }
 
+async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 export async function signedCreativeUrl(path: string | null) {
   if (!path) return null;
   const { data, error } = await supabase.storage.from(CREATIVE_BUCKET).createSignedUrl(path, 3600);
@@ -42,7 +58,11 @@ export async function signedCreativeUrl(path: string | null) {
   return data.signedUrl;
 }
 
-export async function listOwnedCreatives(organizationId: string, includeArchived = false) {
+export async function listOwnedCreatives(
+  organizationId: string,
+  includeArchived = false,
+  signal?: AbortSignal,
+) {
   let query = supabase
     .from("creatives" as any)
     .select("*")
@@ -50,15 +70,40 @@ export async function listOwnedCreatives(organizationId: string, includeArchived
     .neq("source", "meta")
     .order("updated_at", { ascending: false });
   if (!includeArchived) query = query.is("archived_at", null);
-  const { data, error } = await query;
-  if (error) throw error;
-  return Promise.all(
-    ((data ?? []) as unknown as OwnedCreative[]).map(async (creative) => ({
-      ...creative,
-      tags: creative.tags ?? [],
-      signed_url: await signedCreativeUrl(creative.storage_path),
-    })),
+  if (signal) query = query.abortSignal(signal);
+  const { data, error } = await withTimeout(
+    query,
+    GALLERY_QUERY_TIMEOUT_MS,
+    "A galeria demorou demais para responder. Tente novamente.",
   );
+  if (error) throw error;
+
+  const creatives = ((data ?? []) as unknown as OwnedCreative[]).map((creative) => ({
+    ...creative,
+    tags: creative.tags ?? [],
+    signed_url: null,
+  }));
+  const paths = [...new Set(creatives.map((creative) => creative.storage_path).filter(Boolean))] as string[];
+  if (!paths.length) return creatives;
+
+  // Resolve all private assets in one request. Media URL failures must never
+  // keep the entire gallery in a loading state.
+  const signedResult = await withTimeout(
+    supabase.storage.from(CREATIVE_BUCKET).createSignedUrls(paths, 3600),
+    SIGNED_URL_TIMEOUT_MS,
+    "Tempo limite ao carregar imagens da galeria.",
+  ).catch(() => null);
+  if (!signedResult || signedResult.error) return creatives;
+
+  const signedByPath = new Map(
+    (signedResult.data ?? [])
+      .filter((item) => item.path && item.signedUrl)
+      .map((item) => [item.path, item.signedUrl]),
+  );
+  return creatives.map((creative) => ({
+    ...creative,
+    signed_url: creative.storage_path ? signedByPath.get(creative.storage_path) ?? null : null,
+  }));
 }
 
 export async function uploadCreativeAsset(input: {

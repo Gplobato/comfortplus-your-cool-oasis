@@ -382,8 +382,12 @@ export function useMetaCreatives(opts?: {
 
   return useQuery({
     queryKey: ["creative-library", organizationId, !!opts?.includeArchived],
-    queryFn: async () => {
-      const creatives = await listOwnedCreatives(organizationId!, !!opts?.includeArchived);
+    queryFn: async ({ signal }) => {
+      const creatives = await listOwnedCreatives(
+        organizationId!,
+        !!opts?.includeArchived,
+        signal,
+      );
       return {
         creatives,
         counts: {
@@ -398,7 +402,8 @@ export function useMetaCreatives(opts?: {
     },
     enabled: !!organizationId,
     staleTime: 90_000,
-    placeholderData: (prev) => prev,
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 }
 

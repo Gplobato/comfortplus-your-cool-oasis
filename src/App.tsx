@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -36,6 +37,7 @@ import SecuritySettingsPage from "./pages/proads/settings/SecuritySettingsPage";
 import NotFoundPage from "./pages/proads/NotFoundPage";
 
 const queryClient = new QueryClient();
+const WizardPage = lazy(() => import("./pages/wizard/WizardPage"));
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -53,6 +55,14 @@ const App = () => (
                 <Route path="/redefinir-senha" element={<ResetPasswordPage />} />
                 <Route path="/auth/confirm" element={<AuthConfirmPage />} />
                 <Route path="/onboarding" element={<OnboardingPage />} />
+                <Route
+                  path="/wizard"
+                  element={
+                    <Suspense fallback={<div className="min-h-screen bg-[#080512]" />}>
+                      <WizardPage />
+                    </Suspense>
+                  }
+                />
                 <Route
                   path="/"
                   element={
