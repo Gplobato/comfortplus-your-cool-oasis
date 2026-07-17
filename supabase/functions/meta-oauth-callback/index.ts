@@ -251,3 +251,5 @@ Deno.serve(async (req) => {
     return redirect(state.return_origin, { meta: "error", reason: "exchange_failed", detail: msg });
   }
 });
+
+// lovable-redeploy: 2026-07-17T17:09:51.1203059Z
