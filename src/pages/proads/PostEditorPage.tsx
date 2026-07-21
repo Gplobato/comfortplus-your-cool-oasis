@@ -50,6 +50,30 @@ const PLATFORMS: { id: SocialPlatform; label: string; icon: typeof Instagram }[]
   { id: "facebook_feed", label: "Facebook", icon: Facebook },
 ];
 
+const PENDING_POST_MEDIA_KEY = "proads:pending-post-media";
+
+type PendingPostMedia = {
+  url: string;
+  storagePath: string | null;
+  label: string;
+  type: "image" | "video";
+};
+
+function loadPendingPostMedia(): PendingPostMedia | null {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(PENDING_POST_MEDIA_KEY) ?? "null");
+    if (!parsed?.url) return null;
+    return {
+      url: String(parsed.url),
+      storagePath: parsed.storagePath ? String(parsed.storagePath) : null,
+      label: String(parsed.label || "Criativo do Agente IA"),
+      type: parsed.type === "video" ? "video" : "image",
+    };
+  } catch {
+    return null;
+  }
+}
+
 type EditorForm = {
   creativeId: string;
   platforms: SocialPlatform[];
@@ -98,6 +122,9 @@ export default function PostEditorPage() {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadedId, setLoadedId] = useState<string | null>(null);
+  const [pendingMedia, setPendingMedia] = useState<PendingPostMedia | null>(() =>
+    isNew ? loadPendingPostMedia() : null,
+  );
 
   const selectedCreative = creatives.find((c) => c.id === form.creativeId) ?? null;
 
@@ -180,9 +207,9 @@ export default function PostEditorPage() {
       cta: form.cta,
       linkUrl: form.linkUrl,
       mentions: form.mentions,
-      mediaUrl: creative?.media_url ?? creative?.thumbnail_url ?? null,
-      storagePath: creative?.storage_path ?? null,
-      mediaType: creative?.type ?? null,
+      mediaUrl: creative?.media_url ?? creative?.thumbnail_url ?? pendingMedia?.url ?? null,
+      storagePath: creative?.storage_path ?? pendingMedia?.storagePath ?? null,
+      mediaType: creative?.type ?? pendingMedia?.type ?? null,
       scheduledFor: fromDatetimeLocal(form.scheduledFor),
       status,
     };
@@ -196,6 +223,7 @@ export default function PostEditorPage() {
       const payload = buildPayload(status);
       if (isNew) {
         const created = await createPost({ organizationId, userId: user?.id, ...payload });
+        sessionStorage.removeItem(PENDING_POST_MEDIA_KEY);
         await queryClient.invalidateQueries({ queryKey: ["social-posts", organizationId] });
         toast.success("Post salvo");
         navigate(`/conteudo/${created.id}`, { replace: true });
@@ -267,7 +295,12 @@ export default function PostEditorPage() {
     );
   }
 
-  const mediaUrl = selectedCreative?.signed_url || selectedCreative?.media_url || selectedCreative?.thumbnail_url;
+  const mediaUrl =
+    selectedCreative?.signed_url ||
+    selectedCreative?.media_url ||
+    selectedCreative?.thumbnail_url ||
+    pendingMedia?.url;
+  const mediaType = selectedCreative?.type || pendingMedia?.type;
 
   return (
     <>
@@ -306,7 +339,7 @@ export default function PostEditorPage() {
         <div className="space-y-4">
           <Card className="overflow-hidden shadow-card">
             {mediaUrl ? (
-              selectedCreative?.type === "video" ? (
+              mediaType === "video" ? (
                 <video src={mediaUrl} controls className="max-h-[420px] w-full bg-black object-contain" />
               ) : (
                 <img src={mediaUrl} alt="" className="max-h-[420px] w-full bg-muted object-contain" />
@@ -320,7 +353,20 @@ export default function PostEditorPage() {
 
           <Card className="p-4 shadow-card">
             <Label className="mb-1.5 block">Mídia (criativo da galeria)</Label>
-            <Select value={form.creativeId} onValueChange={(v) => setForm({ ...form, creativeId: v })}>
+            {pendingMedia && !form.creativeId && (
+              <div className="mb-3 rounded-md border border-primary/20 bg-gradient-brand-soft p-3">
+                <p className="text-xs font-semibold text-primary">Mídia recebida do Agente IA</p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">{pendingMedia.label}</p>
+              </div>
+            )}
+            <Select
+              value={form.creativeId}
+              onValueChange={(v) => {
+                setPendingMedia(null);
+                sessionStorage.removeItem(PENDING_POST_MEDIA_KEY);
+                setForm({ ...form, creativeId: v });
+              }}
+            >
               <SelectTrigger><SelectValue placeholder="Selecione um criativo" /></SelectTrigger>
               <SelectContent>
                 {creatives.map((c) => (

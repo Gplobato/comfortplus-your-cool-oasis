@@ -16,6 +16,7 @@ import {
   Film,
   Download,
   Megaphone,
+  CalendarPlus,
   ChevronDown,
   Check,
 } from "lucide-react";
@@ -717,6 +718,22 @@ export default function AgentPage() {
     }
   };
 
+  const useInPost = (imgUrl: string, storagePath?: string, label?: string) => {
+    try {
+      sessionStorage.setItem(
+        "proads:pending-post-media",
+        JSON.stringify({
+          url: imgUrl,
+          storagePath: storagePath ?? null,
+          label: label || "Criativo do Agente IA",
+          type: "image",
+        }),
+      );
+    } catch {/* ignore */}
+    toast.success("Criativo enviado para um novo post");
+    navigate("/conteudo/novo?generated=1");
+  };
+
   const currentStatus = STATUS_BY_INTENT[statusIntent][statusStep];
 
   return (
@@ -814,6 +831,7 @@ export default function AgentPage() {
                   key={m.id}
                   message={m}
                   onUseInCampaign={useInCampaign}
+                  onUseInPost={useInPost}
                   campaigns={campaignOptions}
                 />
               ))}
@@ -1130,10 +1148,12 @@ function WorkingIndicator({
 function MessageBubble({
   message,
   onUseInCampaign,
+  onUseInPost,
   campaigns,
 }: {
   message: AgentMessage;
   onUseInCampaign: (url: string, target: "new" | string) => void;
+  onUseInPost: (url: string, storagePath?: string, label?: string) => void;
   campaigns: { id: string; name: string }[];
 }) {
   const isUser = message.role === "user";
@@ -1196,7 +1216,13 @@ function MessageBubble({
 
         {/* Legacy single image */}
         {message.imageUrl && !message.images?.length && (
-          <ImageResult url={message.imageUrl} label="Criativo" onUseInCampaign={onUseInCampaign} campaigns={campaigns} />
+          <ImageResult
+            url={message.imageUrl}
+            label="Criativo"
+            onUseInCampaign={onUseInCampaign}
+            onUseInPost={onUseInPost}
+            campaigns={campaigns}
+          />
         )}
 
         {/* Image pair */}
@@ -1209,6 +1235,7 @@ function MessageBubble({
                 storagePath={img.storage_path}
                 label={img.label ?? img.format}
                 onUseInCampaign={onUseInCampaign}
+                onUseInPost={onUseInPost}
                 campaigns={campaigns}
               />
             ))}
@@ -1307,18 +1334,22 @@ function ImageResult({
   storagePath,
   label,
   onUseInCampaign,
+  onUseInPost,
   campaigns,
 }: {
   url: string;
   storagePath?: string;
   label: string;
   onUseInCampaign: (url: string, target: "new" | string) => void;
+  onUseInPost: (url: string, storagePath?: string, label?: string) => void;
   campaigns: { id: string; name: string }[];
 }) {
   const [resolvedUrl, setResolvedUrl] = useState(url);
   const [mediaError, setMediaError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const refreshAttempted = useRef(false);
+  const isVertical = /9:16|story|reel/i.test(label);
+  const aspectClass = isVertical ? "aspect-[9/16]" : "aspect-square";
 
   useEffect(() => {
     setResolvedUrl(url);
@@ -1344,7 +1375,7 @@ function ImageResult({
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+    <div className="self-start overflow-hidden rounded-2xl border border-border bg-card">
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <Badge variant="outline" className="border-primary/30 bg-gradient-brand-soft text-[10px] font-semibold text-primary">
           {label}
@@ -1354,7 +1385,7 @@ function ImageResult({
         </a>
       </div>
       {mediaError ? (
-        <div className="flex min-h-48 flex-col items-center justify-center gap-3 bg-muted/40 p-6 text-center">
+        <div className={cn("flex w-full flex-col items-center justify-center gap-3 bg-muted/40 p-6 text-center", aspectClass)}>
           <ImageIcon className="h-8 w-8 text-muted-foreground" />
           <p className="text-xs font-medium text-muted-foreground">
             Esta mídia expirou ou não pôde ser carregada.
@@ -1366,18 +1397,30 @@ function ImageResult({
           )}
         </div>
       ) : (
-        <img
-          src={resolvedUrl}
-          alt={label}
-          className="h-auto w-full bg-muted/30 object-contain"
-          loading="lazy"
-          onError={() => void recoverMedia()}
-        />
+        <div className={cn("relative w-full overflow-hidden bg-muted/30", aspectClass)}>
+          <img
+            src={resolvedUrl}
+            alt={label}
+            className="absolute inset-0 h-full w-full object-contain"
+            loading="eager"
+            decoding="async"
+            onLoad={() => setMediaError(false)}
+            onError={() => void recoverMedia()}
+          />
+        </div>
       )}
-      <div className="border-t border-border p-2">
+      <div className="space-y-2 border-t border-border p-2">
+        <Button
+          size="sm"
+          className="w-full gap-1.5 bg-gradient-brand text-primary-foreground"
+          onClick={() => onUseInPost(resolvedUrl, storagePath, label)}
+          disabled={mediaError}
+        >
+          <CalendarPlus className="h-3.5 w-3.5" /> Usar em post
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" className="w-full gap-1.5 bg-gradient-brand text-primary-foreground">
+            <Button size="sm" variant="outline" className="w-full gap-1.5">
               <Megaphone className="h-3.5 w-3.5" /> Usar em campanha
               <ChevronDown className="ml-auto h-3.5 w-3.5" />
             </Button>
