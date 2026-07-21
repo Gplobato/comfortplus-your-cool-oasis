@@ -820,6 +820,102 @@ export type Database = {
           },
         ]
       }
+      social_posts: {
+        Row: {
+          caption: string | null
+          created_at: string
+          created_by: string | null
+          creative_id: string | null
+          cta: string | null
+          external_post_id: string | null
+          hashtags: string[]
+          id: string
+          link_url: string | null
+          media_type: string | null
+          media_url: string | null
+          mentions: string[]
+          organization_id: string
+          page_external_id: string | null
+          platforms: string[]
+          publish_error: string | null
+          published_at: string | null
+          published_by: string | null
+          scheduled_for: string | null
+          source: string
+          status: string
+          storage_path: string | null
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string
+          created_by?: string | null
+          creative_id?: string | null
+          cta?: string | null
+          external_post_id?: string | null
+          hashtags?: string[]
+          id?: string
+          link_url?: string | null
+          media_type?: string | null
+          media_url?: string | null
+          mentions?: string[]
+          organization_id: string
+          page_external_id?: string | null
+          platforms?: string[]
+          publish_error?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          scheduled_for?: string | null
+          source?: string
+          status?: string
+          storage_path?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string
+          created_by?: string | null
+          creative_id?: string | null
+          cta?: string | null
+          external_post_id?: string | null
+          hashtags?: string[]
+          id?: string
+          link_url?: string | null
+          media_type?: string | null
+          media_url?: string | null
+          mentions?: string[]
+          organization_id?: string
+          page_external_id?: string | null
+          platforms?: string[]
+          publish_error?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          scheduled_for?: string | null
+          source?: string
+          status?: string
+          storage_path?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "social_posts_creative_id_fkey"
+            columns: ["creative_id"]
+            isOneToOne: false
+            referencedRelation: "creatives"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_posts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
