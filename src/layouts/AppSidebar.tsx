@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { ExternalLink } from "lucide-react";
+import { CalendarDays, ExternalLink } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -27,10 +28,16 @@ import iconIntegrations from "@/assets/icons/nav-integrations.png";
 import iconHistory from "@/assets/icons/nav-history.png";
 import iconSettings from "@/assets/icons/nav-settings.png";
 
-const nav = [
+const nav: {
+  title: string;
+  url: string;
+  icon?: string;
+  lucideIcon?: LucideIcon;
+}[] = [
   { title: "Visão Geral", url: "/dashboard", icon: iconDashboard },
   { title: "Campanhas", url: "/campanhas", icon: iconCampaigns },
   { title: "Criativos", url: "/criativos", icon: iconCreatives },
+  { title: "Conteúdo", url: "/conteudo", lucideIcon: CalendarDays },
   { title: "Agente IA", url: "/agente", icon: iconAgent },
   { title: "Públicos", url: "/publicos", icon: iconAudiences },
   { title: "Aprovações", url: "/aprovacoes", icon: iconApprovals },
@@ -94,17 +101,28 @@ export function AppSidebar() {
                       )}
                     >
                       <NavLink to={item.url} className="flex items-center gap-3">
-                        <img
-                          src={item.icon}
-                          alt=""
-                          width={28}
-                          height={28}
-                          loading="lazy"
-                          className={cn(
-                            "h-7 w-7 shrink-0 object-contain transition-transform",
-                            active ? "scale-105 drop-shadow-[0_0_8px_rgba(139,92,246,0.55)]" : "opacity-90 group-hover:opacity-100",
-                          )}
-                        />
+                        {item.lucideIcon ? (
+                          <item.lucideIcon
+                            className={cn(
+                              "h-7 w-7 shrink-0 transition-transform",
+                              active
+                                ? "scale-105 text-white drop-shadow-[0_0_8px_rgba(139,92,246,0.55)]"
+                                : "text-white/80 group-hover:text-white",
+                            )}
+                          />
+                        ) : (
+                          <img
+                            src={item.icon}
+                            alt=""
+                            width={28}
+                            height={28}
+                            loading="lazy"
+                            className={cn(
+                              "h-7 w-7 shrink-0 object-contain transition-transform",
+                              active ? "scale-105 drop-shadow-[0_0_8px_rgba(139,92,246,0.55)]" : "opacity-90 group-hover:opacity-100",
+                            )}
+                          />
+                        )}
                         {!collapsed && (
                           <span className="flex-1 truncate text-sm">{item.title}</span>
                         )}

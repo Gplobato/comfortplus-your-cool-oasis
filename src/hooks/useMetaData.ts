@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import { metaKeys } from "@/lib/metaKeys";
 import { listOwnedCreatives, type OwnedCreative } from "@/lib/creative-library";
+import { listPosts, type SocialPlatform } from "@/lib/social-posts";
 
 export class MetaApiError extends Error {
   readonly code: string;
@@ -405,6 +406,57 @@ export function useMetaCreatives(opts?: {
     retry: 1,
     refetchOnWindowFocus: false,
   });
+}
+
+export function useSocialPosts() {
+  const { organizationId } = useMetaIntegration();
+  return useQuery({
+    queryKey: ["social-posts", organizationId],
+    queryFn: async ({ signal }) => {
+      const posts = await listPosts(organizationId!, signal);
+      return { posts };
+    },
+    enabled: !!organizationId,
+    staleTime: 30_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export type GeneratedPostContent = {
+  title: string;
+  caption: string;
+  hashtags: string[];
+  cta: string;
+  mentions: string[];
+};
+
+/** Ask the AI for ready-to-publish post copy (text only, no image generation). */
+export async function generatePostContent(input: {
+  brief: string;
+  platform: SocialPlatform;
+  organizationId: string;
+  textModel?: string;
+}): Promise<GeneratedPostContent> {
+  const { data, error } = await supabase.functions.invoke("nanogpt-chat", {
+    body: {
+      mode: "post_content",
+      brief: input.brief,
+      platform: input.platform,
+      organization_id: input.organizationId,
+      textModel: input.textModel,
+    },
+  });
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error);
+  const post = data?.post ?? {};
+  return {
+    title: String(post.title ?? ""),
+    caption: String(post.caption ?? ""),
+    hashtags: Array.isArray(post.hashtags) ? post.hashtags.map(String) : [],
+    cta: String(post.cta ?? ""),
+    mentions: Array.isArray(post.mentions) ? post.mentions.map(String) : [],
+  };
 }
 
 /** Persist an AI-generated creative into the shared library (alongside Meta). */

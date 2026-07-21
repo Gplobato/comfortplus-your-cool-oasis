@@ -105,7 +105,8 @@ Formato: ${answers.format === "story" ? "vertical 9:16" : "quadrado 1:1"}
   const system = `Você é um diretor de criação especializado em anúncios de resposta direta para Meta Ads.
 Retorne SOMENTE JSON válido com:
 {"headline":"máximo 7 palavras em pt-BR","primary_text":"copy de 2 a 3 frases em pt-BR","cta":"CTA curto em pt-BR","visual_prompt":"prompt detalhado em inglês para gerar a peça final"}
-O visual_prompt deve produzir um anúncio pronto, profissional e crível, com hierarquia clara, fotografia publicitária e o headline exato legível na arte. Não invente preço, desconto ou promessa.`;
+O visual_prompt deve produzir um anúncio pronto, profissional e crível, com hierarquia clara, fotografia publicitária e o headline exato legível na arte. Não invente preço, desconto ou promessa.
+O visual_prompt NÃO deve conter métricas, dashboards, números de performance, gráficos, caixas de detecção, selos, marca d'água nem os textos "IA"/"AI"/"100%". Não descreva estratégia, público-alvo ou briefing dentro da arte — apenas a cena visual e o headline.`;
 
   let creative: {
     headline: string;
@@ -159,7 +160,7 @@ O visual_prompt deve produzir um anúncio pronto, profissional e crível, com hi
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: Deno.env.get("WIZARD_IMAGE_MODEL") || DEFAULT_IMAGE_MODEL,
-      prompt: `${visualPrompt}\n\nOutput format: ${answers.format === "story" ? "9:16 vertical Story/Reel ad" : "1:1 square Feed ad"}.`,
+      prompt: `${visualPrompt}\n\nOutput format: ${answers.format === "story" ? "9:16 vertical Story/Reel ad" : "1:1 square Feed ad"}.\n\nSTRICT: render only the ad creative. No analytics, dashboards, metrics, numbers, charts, detection boxes, UI overlays, badges, seals or watermarks. Never render the text "IA", "AI" or "100%". No strategy or briefing text — only the intended headline copy.`,
       n: 1,
       size,
       response_format: "url",

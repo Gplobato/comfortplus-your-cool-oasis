@@ -43,8 +43,17 @@ Regras:
     VISUAL: [descrição em inglês do FRAME-CHAVE — cena, iluminação]
     </generate_ad_video>
   Backend gera imagem-âncora e usa como base para vídeo (image-to-video, 9:16, 5s).
-- Antes/depois das tags, explique a estratégia (público, ângulo, CTA) em bullets curtos.
-- NÃO use as tags se o usuário só quer conversar.`;
+- Antes/depois das tags, explique a estratégia (público, ângulo, CTA) em bullets curtos NA CONVERSA. NUNCA escreva a estratégia, métricas ou observações internas DENTRO da descrição de <generate_image> — ali vai apenas a cena visual.`;
+
+// Regras rígidas anexadas a TODO prompt de imagem/vídeo para impedir que
+// dashboards, métricas, selos "100% IA" ou textos de estratégia vazem para a arte.
+const IMAGE_GUARD = `STRICT VISUAL RULES (must follow, this is a real client ad):
+- Render ONLY the advertising creative described. Photographic, professional, brand-safe.
+- Do NOT draw analytics, dashboards, metrics, KPIs, numbers, percentages, charts, graphs, stats panels or performance overlays.
+- Do NOT draw detection boxes, bounding boxes, tracking labels, tags like "OK", HUD or app UI overlays or screenshots.
+- Do NOT add any badge, seal, sticker, stamp or watermark. NEVER render the text "IA", "AI", "100%", "100% IA", "gerado por IA" or anything implying the image was AI generated.
+- Do NOT render marketing strategy text, briefing notes, audience descriptions, target or CTA labels as floating text.
+- Any text present must be limited to the intended ad headline/copy, spelled correctly in Brazilian Portuguese.`;
 
 const TRAFFIC_MANAGER_PROMPT = `Você é o **Gerente de Tráfego Pago** do ProAds — especialista sênior em Meta Ads, mas fala como consultor de negócio para o DONO DA EMPRESA (não para um media buyer).
 Você NÃO é o agente de criativos. NÃO gere tags <generate_image>, <generate_video> ou <generate_ad_video>.
@@ -74,6 +83,47 @@ PROPOSTAS AUTOMÁTICAS (quando houver ação clara e IDs reais no META_CONTEXT):
 </propose_action>
 Tools: meta.pause_ad, meta.pause_adset, meta.pause_campaign, meta.budget_change.
 NÃO invente IDs. Máximo 3 propostas.`;
+
+const POST_CONTENT_PROMPT = `Você é social media sênior. Gere conteúdo PRONTO para publicar em redes sociais (post ou story) para o cliente, em português brasileiro, sem que ele precise editar nada.
+Retorne SOMENTE JSON válido, sem markdown e sem comentários, exatamente neste formato:
+{"title":"título curto / gancho","caption":"legenda pronta com quebras de linha","hashtags":["#exemplo"],"cta":"CTA curto","mentions":["@perfil"]}
+Regras:
+- caption: 2 a 5 frases, tom humano e engajador, adequado à plataforma; pode usar emojis com moderação e terminar com uma chamada para ação. Não invente preços, promessas falsas ou números de performance.
+- hashtags: entre 8 e 15, relevantes ao nicho, sem repetição, cada uma começando com # e sem espaços.
+- mentions: só inclua se fizer sentido; pode ser lista vazia.
+- Nunca mencione métricas, dashboards, "IA" ou que o conteúdo foi gerado por IA.`;
+
+function parsePostContent(raw: string): {
+  title: string;
+  caption: string;
+  hashtags: string[];
+  cta: string;
+  mentions: string[];
+} {
+  let text = String(raw ?? "").trim().replace(/^```json\s*|\s*```$/g, "").trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) text = text.slice(start, end + 1);
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = {};
+  }
+  const toStringArray = (value: unknown, prefix: string) =>
+    (Array.isArray(value) ? value : [])
+      .map((item) => String(item ?? "").trim())
+      .filter(Boolean)
+      .map((item) => (prefix && !item.startsWith(prefix) ? `${prefix}${item.replace(/^[#@]+/, "")}` : item))
+      .slice(0, 30);
+  return {
+    title: String(parsed.title ?? "").trim().slice(0, 160),
+    caption: String(parsed.caption ?? "").trim().slice(0, 2200),
+    hashtags: [...new Set(toStringArray(parsed.hashtags, "#").map((h) => h.replace(/\s+/g, "")))],
+    cta: String(parsed.cta ?? "").trim().slice(0, 80),
+    mentions: [...new Set(toStringArray(parsed.mentions, "@"))],
+  };
+}
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -268,7 +318,7 @@ Deno.serve(async (req) => {
     const textModel: string = body?.textModel || DEFAULT_TEXT_MODEL;
     const imageModel: string = body?.imageModel || DEFAULT_IMAGE_MODEL;
     const videoModel: string = body?.videoModel || DEFAULT_VIDEO_MODEL;
-    const mode: "auto" | "image" | "video" | "ad_video" = body?.mode || "auto";
+    const mode: "auto" | "image" | "video" | "ad_video" | "post_content" = body?.mode || "auto";
     const role: string = body?.role || body?.metaContext?.role || "creative_suite";
     const isTrafficManager = role === "traffic_manager";
     const deferMedia: boolean = !!body?.deferMedia;
@@ -304,13 +354,19 @@ Deno.serve(async (req) => {
     const stabilizeImages = (images: GeneratedImage[]) =>
       Promise.all(images.map(stabilizeImage));
 
-    const contextBits: string[] = [];
+    // Visual-safe context ONLY (logo, reference images). This is the only extra
+    // context allowed into image/video prompts.
+    const visualContextBits: string[] = [];
     if (useBrandLogo && !isTrafficManager)
-      contextBits.push(
+      visualContextBits.push(
         "The user attached a brand logo — feature it prominently in every generated visual when creating creatives.",
       );
     if (attachments.length && !isTrafficManager)
-      contextBits.push(`The user attached ${attachments.length} reference image(s). Match their style, subject and framing.`);
+      visualContextBits.push(`The user attached ${attachments.length} reference image(s). Match their style, subject and framing.`);
+
+    // Analytic context (campaign metrics). NEVER goes into image/video prompts —
+    // only text/traffic-manager reasoning.
+    const contextBits: string[] = [...visualContextBits];
     if (metaContext) {
       const s = metaContext.summary
         ? Object.entries(metaContext.summary)
@@ -342,6 +398,9 @@ Deno.serve(async (req) => {
       );
     }
     const extraSystem = contextBits.join(" ");
+    // Extra context for VISUAL generation: only logo/reference + hard guard rails.
+    // Deliberately excludes META_CONTEXT so metrics never render inside the art.
+    const visualExtra = [...visualContextBits, IMAGE_GUARD].filter(Boolean).join("\n\n");
     const basePrompt = isTrafficManager ? TRAFFIC_MANAGER_PROMPT : SYSTEM_PROMPT;
 
     const phases: { label: string; agent: string }[] = [];
@@ -511,6 +570,29 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Ready-to-post text content (title, caption, hashtags, cta, mentions).
+    // Text only — never generates images, so metrics can never leak into art.
+    if (mode === "post_content") {
+      const platform = String(body?.platform || "instagram_feed");
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      const briefText = String(body?.brief || body?.prompt || lastUser?.content || "").trim();
+      if (!briefText) throw new Error("Missing post brief");
+      const platformHint =
+        platform === "instagram_story"
+          ? "Plataforma: Instagram Story — legenda bem curta, direta, com senso de urgência."
+          : platform === "facebook_feed"
+            ? "Plataforma: Facebook Feed — pode ser um pouco mais explicativa."
+            : "Plataforma: Instagram Feed — engajadora, com quebras de linha e emojis moderados.";
+      const raw = await callText(
+        apiKey,
+        [{ role: "user", content: briefText }],
+        textModel,
+        platformHint,
+        POST_CONTENT_PROMPT,
+      );
+      return json({ post: parsePostContent(raw), platform, textModel, phases });
+    }
+
     // Direct visual modes
     if (mode === "image") {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
@@ -518,7 +600,7 @@ Deno.serve(async (req) => {
       if (!prompt) throw new Error("Missing image prompt");
       phases.push({ label: "Diretor de Arte compondo variantes", agent: "creative_director" });
       const images = await stabilizeImages(
-        await callImagePair(apiKey, [prompt, extraSystem].filter(Boolean).join("\n\n"), imageModel),
+        await callImagePair(apiKey, [prompt, visualExtra].filter(Boolean).join("\n\n"), imageModel),
       );
       return json({ text: "", images, textModel, imageModel, phases });
     }
@@ -528,7 +610,7 @@ Deno.serve(async (req) => {
       const prompt = body?.prompt || lastUser?.content || "";
       if (!prompt) throw new Error("Missing video prompt");
       phases.push({ label: `Enviando job para ${videoModel}`, agent: "creative_director" });
-      const videoJob = await submitVideo(apiKey, videoModel, [prompt, extraSystem].filter(Boolean).join("\n\n"));
+      const videoJob = await submitVideo(apiKey, videoModel, [prompt, visualExtra].filter(Boolean).join("\n\n"));
       return json({ text: "", videoJob, textModel, videoModel, phases });
     }
 
@@ -541,7 +623,7 @@ Deno.serve(async (req) => {
       phases.push({ label: "Diretor de Arte gerando frame-âncora 9:16", agent: "creative_director" });
       const rawHeroImageUrl = await callImage(
         apiKey,
-        `${[visual, extraSystem].filter(Boolean).join("\n\n")}\n\nFormat: 9:16 vertical hero frame for a video ad — clean composition, strong subject, dramatic lighting`,
+        `${[visual, visualExtra].filter(Boolean).join("\n\n")}\n\nFormat: 9:16 vertical hero frame for a video ad — clean composition, strong subject, dramatic lighting`,
         imageModel,
         "1024x1792",
       );
@@ -638,7 +720,7 @@ Deno.serve(async (req) => {
       cleanedText = cleanedText.replace(AD_VID_RE, "").trim();
       const { script: s, visual } = parseAdVideoBlock(adMatch[1]);
       script = s;
-      const visualPrompt = [visual, extraSystem].filter(Boolean).join("\n\n");
+      const visualPrompt = [visual, visualExtra].filter(Boolean).join("\n\n");
       phases.push({ label: "Diretor de Arte gerando frame-âncora 9:16", agent: "creative_director" });
       try {
         const rawHeroImageUrl = await callImage(
@@ -679,7 +761,7 @@ Deno.serve(async (req) => {
     const imgMatch = rawText.match(IMG_RE);
     if (imgMatch && !images) {
       cleanedText = cleanedText.replace(IMG_RE, "").trim();
-      const imgPrompt = [imgMatch[1].trim(), extraSystem].filter(Boolean).join("\n\n");
+      const imgPrompt = [imgMatch[1].trim(), visualExtra].filter(Boolean).join("\n\n");
       phases.push({ label: "Diretor de Arte gerando 1:1 e 9:16", agent: "creative_director" });
       try {
         images = await stabilizeImages(await callImagePair(apiKey, imgPrompt, imageModel));
@@ -692,7 +774,7 @@ Deno.serve(async (req) => {
     const vidMatch = rawText.match(VID_RE);
     if (vidMatch && !videoJob) {
       cleanedText = cleanedText.replace(VID_RE, "").trim();
-      const vPrompt = [vidMatch[1].trim(), extraSystem].filter(Boolean).join("\n\n");
+      const vPrompt = [vidMatch[1].trim(), visualExtra].filter(Boolean).join("\n\n");
       phases.push({ label: `Enviando text-to-video ao ${videoModel}`, agent: "creative_director" });
       try {
         videoJob = await submitVideo(apiKey, videoModel, vPrompt);

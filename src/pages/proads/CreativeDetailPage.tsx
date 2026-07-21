@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArrowLeft, Copy, ImageIcon, Link2, Save, Sparkles, Trash2 } from "lucide-react";
+import { Archive, ArrowLeft, CalendarDays, Copy, ImageIcon, Link2, Save, Sparkles, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/proads/PageHeader";
 import { EmptyState } from "@/components/proads/EmptyState";
 import { Card } from "@/components/ui/card";
@@ -304,7 +304,14 @@ export default function CreativeDetailPage() {
               <Info label="Tamanho" value={creative.file_size ? `${formatNumber(Math.round(creative.file_size / 1024))} KB` : "—"} />
               <Info label="Atualizado" value={formatDate(creative.updated_at)} />
             </div>
-            <Button variant="outline" className="mt-4 w-full gap-2" onClick={() => navigate("/agente")}>
+            <Button
+              variant="outline"
+              className="mt-4 w-full gap-2"
+              onClick={() => navigate(`/conteudo/novo?creative=${creative.id}`)}
+            >
+              <CalendarDays className="h-4 w-4" /> Criar post
+            </Button>
+            <Button variant="outline" className="mt-2 w-full gap-2" onClick={() => navigate("/agente")}>
               <Sparkles className="h-4 w-4" /> Gerar variação
             </Button>
             <Button

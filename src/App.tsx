@@ -23,6 +23,8 @@ import NewCampaignPage from "./pages/proads/NewCampaignPage";
 import CreativesPage from "./pages/proads/CreativesPage";
 import CreativeDetailPage from "./pages/proads/CreativeDetailPage";
 import NewCreativePage from "./pages/proads/NewCreativePage";
+import ContentPlannerPage from "./pages/proads/ContentPlannerPage";
+import PostEditorPage from "./pages/proads/PostEditorPage";
 import AudiencesPage from "./pages/proads/AudiencesPage";
 import AudienceDetailPage from "./pages/proads/AudienceDetailPage";
 import ApprovalsPage from "./pages/proads/ApprovalsPage";
@@ -80,6 +82,9 @@ const App = () => (
                   <Route path="criativos" element={<CreativesPage />} />
                   <Route path="criativos/novo" element={<NewCreativePage />} />
                   <Route path="criativos/:id" element={<CreativeDetailPage />} />
+                  <Route path="conteudo" element={<ContentPlannerPage />} />
+                  <Route path="conteudo/novo" element={<PostEditorPage />} />
+                  <Route path="conteudo/:id" element={<PostEditorPage />} />
                   <Route path="publicos" element={<AudiencesPage />} />
                   <Route path="publicos/:id" element={<AudienceDetailPage />} />
                   <Route path="aprovacoes" element={<ApprovalsPage />} />

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { Archive, Grid2x2, ImageIcon, List, Plus, RefreshCw, Search, Sparkles } from "lucide-react";
+import { Archive, CalendarDays, Grid2x2, ImageIcon, List, Plus, RefreshCw, Search, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/proads/PageHeader";
 import { EmptyState } from "@/components/proads/EmptyState";
 import { Card } from "@/components/ui/card";
@@ -51,6 +51,9 @@ export default function CreativesPage() {
         description="Seus arquivos, copies e variações. A galeria não importa anúncios da Meta."
         actions={
           <>
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/conteudo")}>
+              <CalendarDays className="h-3.5 w-3.5 text-primary" /> Programar posts
+            </Button>
             <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/agente")}>
               <Sparkles className="h-3.5 w-3.5 text-accent" /> Gerar com IA
             </Button>
