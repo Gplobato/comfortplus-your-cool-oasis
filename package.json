@@ -2,6 +2,7 @@
   "name": "proads-marketing-os",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "npm@10.9.2",
   "type": "module",
   "engines": {
     "node": ">=20"
