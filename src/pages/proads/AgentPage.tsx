@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import {
   Sparkles,
   Send,
@@ -28,6 +28,8 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -58,10 +60,44 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import brandLogo from "@/assets/brand-logo.png";
 import { useMetaAgentContext } from "@/hooks/useMetaAgentContext";
-import { saveAiCreative, useMetaCampaigns } from "@/hooks/useMetaData";
+import { generatePostContent, saveAiCreative, useMetaCampaigns } from "@/hooks/useMetaData";
 import { signedCreativeUrl } from "@/lib/creative-library";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useAuth } from "@/contexts/AuthContext";
+
+type AgentGoals = {
+  forCampaign: boolean;
+  forPost: boolean;
+  image: boolean;
+  video: boolean;
+};
+
+type PostCopy = NonNullable<AgentMessage["postCopy"]>;
+
+const DEFAULT_GOALS: AgentGoals = {
+  forCampaign: true,
+  forPost: true,
+  image: true,
+  video: false,
+};
+
+function deriveForceMode(goals: AgentGoals): "auto" | "image" | "video" {
+  const wantsAny = goals.forCampaign || goals.forPost || goals.image || goals.video;
+  if (!wantsAny) return "auto";
+  if (goals.video && !goals.image) return "video";
+  if (goals.image || goals.forCampaign || goals.forPost) return "image";
+  if (goals.video) return "video";
+  return "auto";
+}
+
+function enrichPromptForGoals(text: string, goals: AgentGoals) {
+  const bits: string[] = [];
+  if (goals.forPost) bits.push("Uso: post/story Instagram e Facebook (visual limpo, sem métricas nem dashboards).");
+  if (goals.forCampaign) bits.push("Uso: anúncio Meta Ads.");
+  if (goals.image && goals.video) bits.push("Gerar imagem agora; vídeo pode seguir na sequência.");
+  if (!bits.length) return text;
+  return `${text}\n\n[${bits.join(" ")}]`;
+}
 
 const TEXT_MODELS = [
   { value: "zai-org/glm-5.2", label: "GLM 5.2 (padrão)" },
@@ -78,11 +114,57 @@ const IMAGE_MODELS = [
 
 const VIDEO_MODELS = [
   { value: "happyhorse-1.1", label: "HappyHorse 1.1 (padrão)" },
-  { value: "google/gemini-omni-flash", label: "Gemini Omni Flash" },
+  // NanoGPT costuma expor o Omni Flash sem o prefixo google/; mantemos aliases no select.
+  { value: "gemini-omni-flash", label: "Gemini Omni Flash" },
+  { value: "google/gemini-omni-flash", label: "Gemini Omni Flash (google/)" },
   { value: "veo3-video", label: "Veo 3" },
   { value: "kling-v26-pro", label: "Kling 2.6 Pro" },
   { value: "seedance-video", label: "Seedance" },
 ];
+
+const MAX_ATTACHMENTS = 4;
+const MAX_ATTACH_BYTES = 6 * 1024 * 1024;
+
+function absoluteAssetUrl(path: string) {
+  if (!path) return path;
+  if (path.startsWith("data:") || path.startsWith("http://") || path.startsWith("https://")) return path;
+  if (typeof window === "undefined") return path;
+  try {
+    return new URL(path, window.location.origin).href;
+  } catch {
+    return path;
+  }
+}
+
+async function fileToAttachment(file: File): Promise<{ name: string; url: string }> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error(`${file.name} não é uma imagem`);
+  }
+  if (file.size > MAX_ATTACH_BYTES) {
+    throw new Error(`${file.name} maior que 6MB`);
+  }
+
+  const bitmap = await createImageBitmap(file);
+  const maxSide = 1536;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Falha ao processar imagem");
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  const mime = file.type === "image/png" ? "image/png" : "image/jpeg";
+  const quality = mime === "image/jpeg" ? 0.88 : undefined;
+  const url = canvas.toDataURL(mime, quality);
+  if (url.length > 9_000_000) {
+    throw new Error(`${file.name} ficou grande demais após o processamento`);
+  }
+  return { name: file.name, url };
+}
 
 const suggestions = [
   "Analise minhas campanhas Meta",
@@ -150,37 +232,69 @@ export default function AgentPage() {
   const [textModel, setTextModel] = useState(() => loadAiSettings().textModel);
   const [imageModel, setImageModel] = useState(() => loadAiSettings().imageModel);
   const [videoModel, setVideoModel] = useState(() => loadAiSettings().videoModel);
-  const [forceMode, setForceMode] = useState<"auto" | "image" | "video">("auto");
+  const [goals, setGoals] = useState<AgentGoals>(DEFAULT_GOALS);
   const [useBrandLogo, setUseBrandLogo] = useState(true);
   const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);
+  const [dragging, setDragging] = useState(false);
   const [statusStep, setStatusStep] = useState(0);
   const [statusIntent, setStatusIntent] = useState<"chat" | "image" | "video">("chat");
   const [elapsed, setElapsed] = useState(0);
   const startedAtRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const goalsRef = useRef(goals);
   const endRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
   const metaContext = useMetaAgentContext();
   const metaCampaigns = useMetaCampaigns({ status: "ACTIVE" });
   const campaignOptions = metaCampaigns.data?.campaigns ?? [];
   const { activeOrg } = useOrganization();
   const { user } = useAuth();
+  const forceMode = deriveForceMode(goals);
+  const allGoalsOn = goals.forCampaign && goals.forPost && goals.image && goals.video;
+
+  useEffect(() => {
+    goalsRef.current = goals;
+  }, [goals]);
+
+  const toggleGoal = (key: keyof AgentGoals, checked: boolean) => {
+    setGoals((prev) => ({ ...prev, [key]: checked }));
+  };
+
+  const setAllGoals = (checked: boolean) => {
+    setGoals({
+      forCampaign: checked,
+      forPost: checked,
+      image: checked,
+      video: checked,
+    });
+  };
 
   const persistAiImages = (
     images?: { url: string; label?: string; aspect?: string; storage_path?: string }[] | null,
+    copy?: PostCopy | null,
   ) => {
     if (!activeOrg?.id || !images?.length) return;
     void Promise.allSettled(
       images.map((img, i) =>
         saveAiCreative({
           organizationId: activeOrg.id,
-          name: img.label || `Criativo IA ${img.aspect || ""}`.trim() || `Criativo IA ${i + 1}`,
+          name:
+            copy?.title ||
+            img.label ||
+            `Criativo IA ${img.aspect || ""}`.trim() ||
+            `Criativo IA ${i + 1}`,
           thumbnailUrl: img.url,
           mediaUrl: img.url,
           storagePath: img.storage_path ?? null,
           mimeType: "image/png",
           type: "image",
+          headline: copy?.title ?? null,
+          primaryText: copy?.caption ?? null,
+          cta: copy?.cta ?? null,
+          tags: copy?.hashtags ?? [],
+          description: copy?.mentions?.length ? `Menções: ${copy.mentions.join(" ")}` : null,
           userId: user?.id ?? null,
         }),
       ),
@@ -188,6 +302,48 @@ export default function AgentPage() {
       const ok = results.filter((r) => r.status === "fulfilled").length;
       if (ok > 0) toast.success(`${ok} criativo(s) salvos na biblioteca`);
     });
+  };
+
+  const attachPostCopy = async (brief: string, threadId: string, messageId: string) => {
+    if (!goalsRef.current.forPost || !activeOrg?.id) return null;
+    let existing: PostCopy | null | undefined;
+    updateMessage(threadId, messageId, (m) => {
+      existing = m.postCopy ?? null;
+      return m;
+    });
+    if (existing) return existing;
+    try {
+      const post = await generatePostContent({
+        brief,
+        platform: "instagram_feed",
+        organizationId: activeOrg.id,
+        textModel,
+      });
+      updateMessage(threadId, messageId, (m) => {
+        if (m.postCopy) return m;
+        return {
+          ...m,
+          postCopy: post,
+          content: [
+            m.content,
+            "",
+            "📋 Copy pronta para post:",
+            post.title ? `Título: ${post.title}` : "",
+            post.caption ? `Legenda:\n${post.caption}` : "",
+            post.hashtags?.length
+              ? `Hashtags: ${post.hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" ")}`
+              : "",
+            post.cta ? `CTA: ${post.cta}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        };
+      });
+      return post;
+    } catch (err: any) {
+      toast.error(err?.message ?? "Não foi possível gerar a copy do post");
+      return null;
+    }
   };
 
   const active = threads.find((t) => t.id === activeId) ?? threads[0];
@@ -379,7 +535,9 @@ export default function AgentPage() {
             (data?.videoJob
               ? "Job de vídeo enviado. Renderizando abaixo — pode levar 1–4 min."
               : data?.images?.length
-                ? "Aqui estão as variantes prontas para Facebook Ads:"
+                ? goalsRef.current.forPost
+                  ? "Variantes prontas — gerando copy de post em seguida…"
+                  : "Aqui estão as variantes prontas para Facebook Ads:"
                 : m.content),
           status: "sent",
           generationStatus: "completed",
@@ -392,7 +550,30 @@ export default function AgentPage() {
           modelUsed: hasVideo ? videoModel : hasImages ? imageModel : m.modelUsed,
         };
       });
-      if (data?.images?.length) persistAiImages(data.images);
+
+      const brief =
+        request.type === "ad_video"
+          ? `${request.visual}\n${request.script}`
+          : request.prompt;
+      const copy = await attachPostCopy(brief, threadId, messageId);
+      if (data?.images?.length) persistAiImages(data.images, copy);
+
+      // Se pediu imagem + vídeo, dispara o vídeo na sequência com o mesmo briefing
+      if (
+        request.type === "image" &&
+        goalsRef.current.video &&
+        goalsRef.current.image &&
+        !data?.videoJob &&
+        !data?.videoUrl
+      ) {
+        void startMediaJob({
+          threadId,
+          messageId,
+          request: { type: "video", prompt: request.prompt },
+          attachmentUrls,
+          brandOn,
+        });
+      }
     } catch (err: any) {
       updateMessage(threadId, messageId, (m) => ({
         ...m,
@@ -452,10 +633,12 @@ export default function AgentPage() {
         videoStartedAt: data?.videoJob ? new Date().toISOString() : m.videoStartedAt,
         modelUsed: data?.videoJob || data?.videoUrl ? videoModel : mediaRequest || data?.images?.length ? imageModel : textModel,
       }));
-      if (data?.images?.length) persistAiImages(data.images);
-
       if (mediaRequest) {
         void startMediaJob({ threadId, messageId, request: mediaRequest, attachmentUrls, brandOn });
+      } else {
+        const brief = history.filter((h) => h.role === "user").map((h) => h.content).slice(-1)[0] ?? "";
+        const copy = await attachPostCopy(brief, threadId, messageId);
+        if (data?.images?.length) persistAiImages(data.images, copy);
       }
     } catch (err: any) {
       updateMessage(threadId, messageId, (m) => ({
@@ -488,46 +671,85 @@ export default function AgentPage() {
     });
   };
 
-  const handleFiles = async (files: FileList | null) => {
+  const handleFiles = async (files: FileList | File[] | null) => {
     if (!files?.length) return;
-    const arr = await Promise.all(
-      Array.from(files).slice(0, 4).map(
-        (f) =>
-          new Promise<{ name: string; url: string }>((res, rej) => {
-            if (f.size > 4 * 1024 * 1024) {
-              rej(new Error(`${f.name} maior que 4MB`));
-              return;
-            }
-            const r = new FileReader();
-            r.onload = () => res({ name: f.name, url: String(r.result) });
-            r.onerror = () => rej(new Error("Erro ao ler"));
-            r.readAsDataURL(f);
-          }),
-      ),
-    ).catch((e) => {
-      toast.error(e.message);
-      return [];
-    });
-    setAttachments((prev) => [...prev, ...arr].slice(0, 4));
+    const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (!list.length) {
+      toast.error("Arraste apenas imagens (PNG, JPG, WEBP…)");
+      return;
+    }
+    const room = MAX_ATTACHMENTS - attachments.length;
+    if (room <= 0) {
+      toast.error(`Máximo de ${MAX_ATTACHMENTS} imagens anexadas`);
+      return;
+    }
+    try {
+      const arr = await Promise.all(list.slice(0, room).map((f) => fileToAttachment(f)));
+      setAttachments((prev) => [...prev, ...arr].slice(0, MAX_ATTACHMENTS));
+      toast.success(
+        arr.length === 1 ? "Imagem anexada — será usada como referência" : `${arr.length} imagens anexadas`,
+      );
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao anexar imagem");
+    }
+  };
+
+  const onComposerDragEnter = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current += 1;
+    if (e.dataTransfer.types.includes("Files")) setDragging(true);
+  };
+
+  const onComposerDragLeave = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDragging(false);
+  };
+
+  const onComposerDragOver = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes("Files")) e.dataTransfer.dropEffect = "copy";
+  };
+
+  const onComposerDrop = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setDragging(false);
+    void handleFiles(e.dataTransfer.files);
   };
 
   const send = async (text: string) => {
-    if (!text.trim() || loading || !active) return;
-    const intent = detectIntent(text, forceMode === "auto" ? undefined : forceMode);
+    if (loading || !active) return;
+    const attachList = [...attachments];
+    const brandOn = useBrandLogo;
+    const trimmed = text.trim();
+    if (!trimmed && !attachList.length) return;
+
+    const displayText =
+      trimmed ||
+      (attachList.length === 1
+        ? "Use a imagem anexada como referência principal para o criativo."
+        : `Use as ${attachList.length} imagens anexadas como referência visual para o criativo.`);
+    const mode = deriveForceMode(goals);
+    const prompt = enrichPromptForGoals(displayText, goals);
+    const intent = detectIntent(prompt, mode === "auto" ? undefined : mode);
     setStatusIntent(intent);
     setStatusStep(0);
 
-    const attachList = [...attachments];
-    const brandOn = useBrandLogo;
+    const brandUrl = absoluteAssetUrl(brandLogo);
 
     const userMsg: AgentMessage = {
       id: `u_${Date.now()}`,
       role: "user",
-      content: text,
+      content: displayText,
       createdAt: new Date().toISOString(),
       status: "sent",
       attachments: [
-        ...(brandOn ? [{ name: "Logo da marca", url: brandLogo }] : []),
+        ...(brandOn ? [{ name: "Logo da marca", url: brandUrl }] : []),
         ...attachList,
       ],
     };
@@ -555,28 +777,31 @@ export default function AgentPage() {
             : m.content,
         }));
 
+      // URLs usáveis pela NanoGPT (data: ou https absolutos) — a logo relativa era ignorada.
       const attachmentUrls = [
-        ...(brandOn ? [brandLogo] : []),
+        ...(brandOn ? [brandUrl] : []),
         ...attachList.map((a) => a.url),
-      ];
+      ].filter((u) => u.startsWith("data:image/") || u.startsWith("https://") || u.startsWith("http://"));
 
-      if (forceMode !== "auto") {
+      if (mode !== "auto") {
         const replyId = `a_${Date.now()}`;
-        const request: MediaRequest = { type: forceMode, prompt: text };
+        const request: MediaRequest = { type: mode, prompt };
         const replyMsg: AgentMessage = {
           id: replyId,
           role: "assistant",
           agent: "creative_director",
           content:
-            forceMode === "image"
-              ? "Tarefa criada. Diretor de Arte gerando as variantes 1:1 e 9:16 em segundo plano."
+            mode === "image"
+              ? goals.forPost
+                ? "Tarefa criada. Gerando variantes 1:1 e 9:16 e preparando copy de post."
+                : "Tarefa criada. Diretor de Arte gerando as variantes 1:1 e 9:16 em segundo plano."
               : "Tarefa criada. HappyHorse 1.1 vai receber o job e eu acompanho o status aqui.",
           createdAt: new Date().toISOString(),
           status: "sent",
           generationStatus: "queued",
           generationStartedAt: new Date().toISOString(),
-          phases: STATUS_BY_INTENT[forceMode],
-          modelUsed: forceMode === "image" ? imageModel : videoModel,
+          phases: STATUS_BY_INTENT[mode],
+          modelUsed: mode === "image" ? imageModel : videoModel,
         };
         updateThread(active.id, (t) => ({
           ...t,
@@ -625,8 +850,8 @@ export default function AgentPage() {
           textModel,
           imageModel,
           videoModel,
-          mode: forceMode,
-          prompt: forceMode !== "auto" ? text : undefined,
+          mode,
+          prompt: mode !== "auto" ? prompt : undefined,
           useBrandLogo: brandOn,
           attachments: attachmentUrls,
           deferMedia: true,
@@ -671,7 +896,6 @@ export default function AgentPage() {
         messages: [...t.messages, replyMsg],
         updatedAt: new Date().toISOString(),
       }));
-      if (data?.images?.length) persistAiImages(data.images);
       if (mediaRequest) {
         void startMediaJob({
           threadId: active.id,
@@ -680,6 +904,11 @@ export default function AgentPage() {
           attachmentUrls,
           brandOn,
         });
+      } else if (data?.images?.length) {
+        const copy = await attachPostCopy(prompt, active.id, replyMsg.id);
+        persistAiImages(data.images, copy);
+      } else if (goals.forPost && data?.text) {
+        await attachPostCopy(prompt, active.id, replyMsg.id);
       }
     } catch (err: any) {
       const errorMsg: AgentMessage = {
@@ -718,19 +947,24 @@ export default function AgentPage() {
     }
   };
 
-  const useInPost = (imgUrl: string, storagePath?: string, label?: string) => {
+  const useInPost = (imgUrl: string, storagePath?: string, label?: string, postCopy?: PostCopy | null) => {
     try {
       sessionStorage.setItem(
         "proads:pending-post-media",
         JSON.stringify({
           url: imgUrl,
           storagePath: storagePath ?? null,
-          label: label || "Criativo do Agente IA",
+          label: label || postCopy?.title || "Criativo do Agente IA",
           type: "image",
+          title: postCopy?.title ?? "",
+          caption: postCopy?.caption ?? "",
+          hashtags: postCopy?.hashtags ?? [],
+          cta: postCopy?.cta ?? "",
+          mentions: postCopy?.mentions ?? [],
         }),
       );
     } catch {/* ignore */}
-    toast.success("Criativo enviado para um novo post");
+    toast.success("Criativo e copy enviados para um novo post");
     navigate("/conteudo/novo?generated=1");
   };
 
@@ -863,7 +1097,26 @@ export default function AgentPage() {
           )}
 
           {/* Composer */}
-          <div className="border-t border-border bg-card/50 p-3">
+          <div
+            className={cn(
+              "relative border-t border-border bg-card/50 p-3 transition-colors",
+              dragging && "bg-primary/5",
+            )}
+            onDragEnter={onComposerDragEnter}
+            onDragLeave={onComposerDragLeave}
+            onDragOver={onComposerDragOver}
+            onDrop={onComposerDrop}
+          >
+            {dragging && (
+              <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/10">
+                <div className="rounded-lg bg-card px-4 py-3 text-center shadow-sm">
+                  <ImageIcon className="mx-auto h-6 w-6 text-primary" />
+                  <p className="mt-1 text-sm font-semibold text-foreground">Solte a imagem aqui</p>
+                  <p className="text-[11px] text-muted-foreground">Ela será usada como referência visual</p>
+                </div>
+              </div>
+            )}
+
             {/* Attachment chips */}
             {(useBrandLogo || attachments.length > 0) && (
               <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -880,6 +1133,7 @@ export default function AgentPage() {
                   <div key={i} className="flex items-center gap-1.5 rounded-full border border-border bg-secondary px-2 py-1 text-[11px]">
                     <img src={a.url} alt={a.name} className="h-4 w-4 rounded object-cover" />
                     <span className="max-w-[120px] truncate">{a.name}</span>
+                    <span className="rounded bg-primary/10 px-1 text-[9px] font-semibold uppercase text-primary">ref</span>
                     <button onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))} aria-label="Remover anexo">
                       <X className="h-3 w-3" />
                     </button>
@@ -888,6 +1142,46 @@ export default function AgentPage() {
               </div>
             )}
 
+            <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-secondary/40 px-3 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Gerar para</span>
+              <GoalCheck
+                id="goal-campaign"
+                checked={goals.forCampaign}
+                onCheckedChange={(v) => toggleGoal("forCampaign", v)}
+                label="Campanha"
+                icon={<Megaphone className="h-3.5 w-3.5" />}
+              />
+              <GoalCheck
+                id="goal-post"
+                checked={goals.forPost}
+                onCheckedChange={(v) => toggleGoal("forPost", v)}
+                label="Post / Story"
+                icon={<CalendarPlus className="h-3.5 w-3.5" />}
+              />
+              <Separator orientation="vertical" className="hidden h-5 sm:block" />
+              <GoalCheck
+                id="goal-image"
+                checked={goals.image}
+                onCheckedChange={(v) => toggleGoal("image", v)}
+                label="Imagem"
+                icon={<ImageIcon className="h-3.5 w-3.5" />}
+              />
+              <GoalCheck
+                id="goal-video"
+                checked={goals.video}
+                onCheckedChange={(v) => toggleGoal("video", v)}
+                label="Vídeo"
+                icon={<Film className="h-3.5 w-3.5" />}
+              />
+              <GoalCheck
+                id="goal-all"
+                checked={allGoalsOn}
+                onCheckedChange={setAllGoals}
+                label="Tudo"
+                icon={<Sparkles className="h-3.5 w-3.5" />}
+              />
+            </div>
+
             <div className="rounded-xl border border-border bg-card p-2 focus-within:border-primary/40 focus-within:ring-4 focus-within:ring-primary/10">
               <Textarea
                 ref={textareaRef}
@@ -895,7 +1189,9 @@ export default function AgentPage() {
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={
                   forceMode === "image"
-                    ? "Descreva a imagem — geraremos 1:1 e 9:16 automaticamente..."
+                    ? goals.forPost
+                      ? "Descreva o post — geraremos arte + título, legenda e hashtags..."
+                      : "Descreva a imagem — geraremos 1:1 e 9:16 automaticamente..."
                     : forceMode === "video"
                       ? "Descreva o vídeo que quer gerar..."
                       : "Peça uma análise, um criativo, um vídeo, uma copy..."
@@ -906,6 +1202,14 @@ export default function AgentPage() {
                     e.preventDefault();
                     send(input);
                   }
+                }}
+                onPaste={(e) => {
+                  const files = Array.from(e.clipboardData?.files ?? []).filter((f) =>
+                    f.type.startsWith("image/"),
+                  );
+                  if (!files.length) return;
+                  e.preventDefault();
+                  void handleFiles(files);
                 }}
               />
               <div className="flex flex-wrap items-center gap-1 border-t border-border pt-2">
@@ -932,22 +1236,6 @@ export default function AgentPage() {
                 >
                   <Check className={cn("h-3.5 w-3.5", !useBrandLogo && "opacity-30")} />
                   Logo da marca
-                </Button>
-                <Button
-                  variant={forceMode === "image" ? "default" : "ghost"}
-                  size="sm"
-                  className={cn("h-8 gap-1.5 text-xs", forceMode === "image" && "bg-accent text-accent-foreground hover:bg-accent/90")}
-                  onClick={() => setForceMode((m) => (m === "image" ? "auto" : "image"))}
-                >
-                  <ImageIcon className="h-3.5 w-3.5" /> Imagem
-                </Button>
-                <Button
-                  variant={forceMode === "video" ? "default" : "ghost"}
-                  size="sm"
-                  className={cn("h-8 gap-1.5 text-xs", forceMode === "video" && "bg-accent text-accent-foreground hover:bg-accent/90")}
-                  onClick={() => setForceMode((m) => (m === "video" ? "auto" : "video"))}
-                >
-                  <Film className="h-3.5 w-3.5" /> Vídeo
                 </Button>
                 <Button
                   variant="ghost"
@@ -977,14 +1265,25 @@ export default function AgentPage() {
                   size="icon"
                   className="ml-auto h-8 w-8 bg-gradient-brand text-primary-foreground"
                   onClick={() => send(input)}
-                  disabled={!input.trim() || loading}
+                  disabled={loading || (!input.trim() && !attachments.length)}
                 >
                   <Send className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </div>
             <p className="mt-2 text-center text-[10px] text-muted-foreground">
-              Modo: <span className="font-semibold text-foreground">{forceMode}</span> · Texto: {textModel} · Imagem: {imageModel} · Vídeo: {videoModel}
+              Arraste imagens aqui · anexos viram referência visual · Destino:{" "}
+              <span className="font-semibold text-foreground">
+                {[
+                  goals.forCampaign && "campanha",
+                  goals.forPost && "post",
+                  goals.image && "imagem",
+                  goals.video && "vídeo",
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "chat"}
+              </span>{" "}
+              · Texto: {textModel} · Imagem: {imageModel} · Vídeo: {videoModel}
             </p>
           </div>
         </Card>
@@ -1145,6 +1444,36 @@ function WorkingIndicator({
   );
 }
 
+function GoalCheck({
+  id,
+  checked,
+  onCheckedChange,
+  label,
+  icon,
+}: {
+  id: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  label: string;
+  icon: ReactNode;
+}) {
+  return (
+    <label htmlFor={id} className="flex cursor-pointer items-center gap-1.5 text-xs text-foreground">
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={(value) => onCheckedChange(value === true)}
+      />
+      <span className="inline-flex items-center gap-1 text-muted-foreground">
+        {icon}
+        <Label htmlFor={id} className="cursor-pointer text-xs font-medium text-foreground">
+          {label}
+        </Label>
+      </span>
+    </label>
+  );
+}
+
 function MessageBubble({
   message,
   onUseInCampaign,
@@ -1153,7 +1482,7 @@ function MessageBubble({
 }: {
   message: AgentMessage;
   onUseInCampaign: (url: string, target: "new" | string) => void;
-  onUseInPost: (url: string, storagePath?: string, label?: string) => void;
+  onUseInPost: (url: string, storagePath?: string, label?: string, postCopy?: PostCopy | null) => void;
   campaigns: { id: string; name: string }[];
 }) {
   const isUser = message.role === "user";
@@ -1219,6 +1548,7 @@ function MessageBubble({
           <ImageResult
             url={message.imageUrl}
             label="Criativo"
+            postCopy={message.postCopy}
             onUseInCampaign={onUseInCampaign}
             onUseInPost={onUseInPost}
             campaigns={campaigns}
@@ -1234,11 +1564,31 @@ function MessageBubble({
                 url={img.url}
                 storagePath={img.storage_path}
                 label={img.label ?? img.format}
+                postCopy={message.postCopy}
                 onUseInCampaign={onUseInCampaign}
                 onUseInPost={onUseInPost}
                 campaigns={campaigns}
               />
             ))}
+          </div>
+        )}
+
+        {!isUser && message.postCopy && (
+          <div className="rounded-2xl border border-border bg-card p-3 text-left text-xs">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-accent">Copy pronta</p>
+            {message.postCopy.title && <p className="mt-1 font-semibold">{message.postCopy.title}</p>}
+            {message.postCopy.caption && (
+              <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{message.postCopy.caption}</p>
+            )}
+            {!!message.postCopy.hashtags?.length && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {message.postCopy.hashtags.map((tag) => (
+                  <Badge key={tag} variant="outline" className="text-[10px]">
+                    {tag.startsWith("#") ? tag : `#${tag}`}
+                  </Badge>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1333,6 +1683,7 @@ function ImageResult({
   url,
   storagePath,
   label,
+  postCopy,
   onUseInCampaign,
   onUseInPost,
   campaigns,
@@ -1340,8 +1691,9 @@ function ImageResult({
   url: string;
   storagePath?: string;
   label: string;
+  postCopy?: PostCopy | null;
   onUseInCampaign: (url: string, target: "new" | string) => void;
-  onUseInPost: (url: string, storagePath?: string, label?: string) => void;
+  onUseInPost: (url: string, storagePath?: string, label?: string, postCopy?: PostCopy | null) => void;
   campaigns: { id: string; name: string }[];
 }) {
   const [resolvedUrl, setResolvedUrl] = useState(url);
@@ -1413,7 +1765,7 @@ function ImageResult({
         <Button
           size="sm"
           className="w-full gap-1.5 bg-gradient-brand text-primary-foreground"
-          onClick={() => onUseInPost(resolvedUrl, storagePath, label)}
+          onClick={() => onUseInPost(resolvedUrl, storagePath, label, postCopy)}
           disabled={mediaError}
         >
           <CalendarPlus className="h-3.5 w-3.5" /> Usar em post

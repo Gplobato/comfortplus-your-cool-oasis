@@ -471,8 +471,12 @@ export async function saveAiCreative(input: {
   headline?: string | null;
   primaryText?: string | null;
   cta?: string | null;
+  description?: string | null;
+  tags?: string[];
+  publicationStatus?: "draft" | "ready" | "published" | "failed";
   userId?: string | null;
 }) {
+  const hasCopy = !!(input.headline || input.primaryText || input.tags?.length);
   const { data, error } = await supabase
     .from("creatives" as any)
     .insert({
@@ -488,6 +492,9 @@ export async function saveAiCreative(input: {
       headline: input.headline ?? null,
       primary_text: input.primaryText ?? null,
       cta: input.cta ?? null,
+      description: input.description ?? null,
+      tags: input.tags ?? [],
+      publication_status: input.publicationStatus ?? (hasCopy ? "ready" : "draft"),
       created_by_ai: true,
       created_by_user_id: input.userId ?? null,
       status: "draft",

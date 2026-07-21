@@ -31,9 +31,10 @@ Papéis do time: Diretor de Marketing, Pesquisador, Estrategista, Copywriter, Ro
 Regras:
 - Responda sempre em português brasileiro, tom profissional e direto.
 - Use markdown quando ajudar (listas, negrito, tabelas curtas).
+- Se o usuário anexar imagens, trate-as como REFERÊNCIA VISUAL obrigatória (mesmo sujeito/produto/cena). Nunca ignore anexos.
 - Se o usuário pedir uma IMAGEM / criativo estático / mockup, inclua na resposta:
     <generate_image>DESCRIÇÃO DETALHADA EM INGLÊS</generate_image>
-  Duas variantes serão geradas (1:1 Feed e 9:16 Story/Reel).
+  Duas variantes serão geradas (1:1 Feed e 9:16 Story/Reel). As imagens anexadas serão injetadas como input_references.
 - Se o usuário pedir um VÍDEO SIMPLES text-to-video, inclua:
     <generate_video>DESCRIÇÃO EM INGLÊS</generate_video>
 - Se o usuário pedir um CRIATIVO EM VÍDEO com narração/storytelling, inclua:
@@ -125,9 +126,70 @@ function parsePostContent(raw: string): {
   };
 }
 
+type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 interface ChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ChatContentPart[];
+}
+
+function isUsableImageUrl(url: unknown): url is string {
+  if (typeof url !== "string" || !url.trim()) return false;
+  return (
+    url.startsWith("data:image/") ||
+    url.startsWith("https://") ||
+    url.startsWith("http://")
+  );
+}
+
+function normalizeReferenceUrls(urls: string[], limit = 4): string[] {
+  return [...new Set(urls.filter(isUsableImageUrl))].slice(0, limit);
+}
+
+/** Attach reference images to the latest user message so vision models can see them. */
+function withAttachmentVision(messages: ChatMessage[], attachments: string[]): ChatMessage[] {
+  const refs = normalizeReferenceUrls(attachments);
+  if (!refs.length || !messages.length) return messages;
+  let lastUser = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user") {
+      lastUser = i;
+      break;
+    }
+  }
+  if (lastUser < 0) return messages;
+  return messages.map((m, i) => {
+    if (i !== lastUser) return m;
+    const text =
+      typeof m.content === "string"
+        ? m.content
+        : m.content
+            .filter((p): p is { type: "text"; text: string } => p.type === "text")
+            .map((p) => p.text)
+            .join("\n");
+    return {
+      ...m,
+      content: [
+        {
+          type: "text",
+          text: `${text}\n\n[O usuário anexou ${refs.length} imagem(ns) de referência. Use-as como base visual — preserve sujeitos, produto, cena e estilo.]`,
+        },
+        ...refs.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+      ],
+    };
+  });
+}
+
+function parseImageResponse(raw: string): string {
+  const parsed = JSON.parse(raw);
+  const entry = parsed?.data?.[0] ?? parsed?.images?.[0] ?? parsed ?? {};
+  if (typeof entry === "string" && isUsableImageUrl(entry)) return entry;
+  if (entry.url) return entry.url as string;
+  if (entry.b64_json) return `data:image/png;base64,${entry.b64_json}`;
+  if (entry.b64) return `data:image/png;base64,${entry.b64}`;
+  throw new Error("Image response missing url/b64_json");
 }
 
 function normalizeModelList(raw: any): { id: string; name: string; owned_by?: string }[] {
@@ -176,10 +238,86 @@ async function callText(
   return (JSON.parse(raw)?.choices?.[0]?.message?.content ?? "") as string;
 }
 
-async function callImage(apiKey: string, prompt: string, model: string, size: string) {
+async function callImage(
+  apiKey: string,
+  prompt: string,
+  model: string,
+  size: string,
+  references: string[] = [],
+) {
+  const refs = normalizeReferenceUrls(references);
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    "x-api-key": apiKey,
+    "Content-Type": "application/json",
+  };
+
+  // Prefer image-to-image when the user attached references (or brand logo).
+  if (refs.length) {
+    const attempts: { path: string; body: Record<string, unknown> }[] = [
+      {
+        path: "/api/v1/images",
+        body: {
+          model,
+          prompt,
+          n: 1,
+          size,
+          response_format: "url",
+          input_references: refs.map((url) => ({
+            type: "image_url",
+            image_url: { url },
+          })),
+        },
+      },
+      {
+        path: "/api/v1/images/edits",
+        body: {
+          model,
+          prompt,
+          n: 1,
+          size,
+          response_format: "url",
+          imageDataUrls: refs,
+        },
+      },
+      {
+        path: "/v1/images/edits",
+        body: {
+          model,
+          prompt,
+          n: 1,
+          size,
+          response_format: "url",
+          imageDataUrls: refs,
+        },
+      },
+    ];
+
+    let lastError = "";
+    for (const attempt of attempts) {
+      const res = await fetch(`${NANO_BASE}${attempt.path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(attempt.body),
+      });
+      const raw = await res.text();
+      if (!res.ok) {
+        lastError = `${attempt.path} → ${res.status}: ${raw.slice(0, 220)}`;
+        console.error("NanoGPT image-ref error", lastError);
+        continue;
+      }
+      try {
+        return parseImageResponse(raw);
+      } catch (err) {
+        lastError = `${attempt.path}: ${(err as Error).message}`;
+      }
+    }
+    throw new Error(`Image com referência falhou (${lastError || "sem detalhe"})`);
+  }
+
   const res = await fetch(`${NANO_BASE}/v1/images/generations`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ model, prompt, n: 1, size, response_format: "url" }),
   });
   const raw = await res.text();
@@ -187,21 +325,37 @@ async function callImage(apiKey: string, prompt: string, model: string, size: st
     console.error("NanoGPT image error", res.status, raw);
     throw new Error(`Image failed (${res.status})`);
   }
-  const entry = JSON.parse(raw)?.data?.[0] ?? {};
-  if (entry.url) return entry.url as string;
-  if (entry.b64_json) return `data:image/png;base64,${entry.b64_json}`;
-  throw new Error("Image response missing url/b64_json");
+  return parseImageResponse(raw);
 }
 
-async function callImagePair(apiKey: string, prompt: string, model: string) {
+async function callImagePair(
+  apiKey: string,
+  prompt: string,
+  model: string,
+  references: string[] = [],
+) {
+  const refNote = references.length
+    ? "\n\nIMPORTANT: Use the attached reference image(s) as the primary visual source — keep the same subject/product/scene, improve for ad quality."
+    : "";
+  const full = `${prompt}${refNote}`;
   const [square, vertical] = await Promise.all([
-    callImage(apiKey, `${prompt}\n\nFormat: 1:1 square feed ad`, model, "1024x1024").catch((e) => ({ error: e.message })),
-    callImage(apiKey, `${prompt}\n\nFormat: 9:16 vertical story/reel ad`, model, "1024x1792").catch((e) => ({ error: e.message })),
+    callImage(apiKey, `${full}\n\nFormat: 1:1 square feed ad`, model, "1024x1024", references).catch((e) => ({
+      error: e.message,
+    })),
+    callImage(apiKey, `${full}\n\nFormat: 9:16 vertical story/reel ad`, model, "1024x1792", references).catch((e) => ({
+      error: e.message,
+    })),
   ]);
   const out: { url: string; format: string; label: string }[] = [];
   if (typeof square === "string") out.push({ url: square, format: "1:1", label: "Feed 1:1" });
   if (typeof vertical === "string") out.push({ url: vertical, format: "9:16", label: "Story 9:16" });
-  if (!out.length) throw new Error("Falha nas duas variantes de imagem");
+  if (!out.length) {
+    const errors = [square, vertical]
+      .filter((v): v is { error: string } => typeof v === "object" && !!v && "error" in v)
+      .map((v) => v.error)
+      .join(" | ");
+    throw new Error(errors || "Falha nas duas variantes de imagem");
+  }
   return out;
 }
 
@@ -231,23 +385,49 @@ async function submitVideoJob(
   return runId as string;
 }
 
+function videoModelCandidates(model: string): string[] {
+  const m = String(model || "").trim();
+  const lower = m.toLowerCase();
+  // Omni Flash: NanoGPT has used more than one slug; try the known aliases in order.
+  if (/omni/.test(lower)) {
+    return [
+      m,
+      "gemini-omni-flash",
+      "google/gemini-omni-flash",
+      "gemini-omni-flash-preview",
+      "google/gemini-omni-flash-preview",
+    ].filter((v, i, arr) => v && arr.indexOf(v) === i);
+  }
+  return [m];
+}
+
 async function submitVideo(
   apiKey: string,
   model: string,
   prompt: string,
   opts: { imageUrl?: string; aspect_ratio?: string; duration?: string; resolution?: string } = {},
 ): Promise<{ runId: string; model: string; prompt: string }> {
-  const body: Record<string, unknown> = {
-    model,
-    prompt,
-    aspect_ratio: opts.aspect_ratio ?? "9:16",
-    duration: opts.duration ?? "5",
-    resolution: opts.resolution ?? "1080p",
-  };
-  if (opts.imageUrl) body.imageUrl = opts.imageUrl;
-  const runId = await submitVideoJob(apiKey, body);
-  console.log("video job submitted", runId, model);
-  return { runId, model, prompt };
+  const candidates = videoModelCandidates(model);
+  let lastError = "";
+  for (const candidate of candidates) {
+    const body: Record<string, unknown> = {
+      model: candidate,
+      prompt,
+      aspect_ratio: opts.aspect_ratio ?? "9:16",
+      duration: opts.duration ?? "5",
+      resolution: opts.resolution ?? (/omni/i.test(candidate) ? "720p" : "1080p"),
+    };
+    if (opts.imageUrl) body.imageUrl = opts.imageUrl;
+    try {
+      const runId = await submitVideoJob(apiKey, body);
+      console.log("video job submitted", runId, candidate);
+      return { runId, model: candidate, prompt };
+    } catch (err) {
+      lastError = (err as Error).message;
+      console.error("video submit candidate failed", candidate, lastError);
+    }
+  }
+  throw new Error(lastError || `Video submit failed for ${model}`);
 }
 
 // -------- Tag parsing --------
@@ -361,8 +541,11 @@ Deno.serve(async (req) => {
       visualContextBits.push(
         "The user attached a brand logo — feature it prominently in every generated visual when creating creatives.",
       );
-    if (attachments.length && !isTrafficManager)
-      visualContextBits.push(`The user attached ${attachments.length} reference image(s). Match their style, subject and framing.`);
+    const referenceImages = normalizeReferenceUrls(attachments);
+    if (referenceImages.length && !isTrafficManager)
+      visualContextBits.push(
+        `The user attached ${referenceImages.length} reference image(s) as PIXEL INPUT. Reuse the same subject/product/scene from those images — do not invent a different scene.`,
+      );
 
     // Analytic context (campaign metrics). NEVER goes into image/video prompts —
     // only text/traffic-manager reasoning.
@@ -596,36 +779,90 @@ Deno.serve(async (req) => {
     // Direct visual modes
     if (mode === "image") {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
-      const prompt = body?.prompt || lastUser?.content || "";
-      if (!prompt) throw new Error("Missing image prompt");
-      phases.push({ label: "Diretor de Arte compondo variantes", agent: "creative_director" });
+      const lastUserText =
+        typeof lastUser?.content === "string"
+          ? lastUser.content
+          : Array.isArray(lastUser?.content)
+            ? lastUser.content
+                .filter((p): p is { type: "text"; text: string } => p.type === "text")
+                .map((p) => p.text)
+                .join("\n")
+            : "";
+      const prompt = body?.prompt || lastUserText || "";
+      if (!prompt && !referenceImages.length) throw new Error("Missing image prompt");
+      const imagePrompt =
+        prompt ||
+        "Create a polished advertising creative based on the attached reference image(s). Keep the same subject and improve composition for Meta Ads.";
+      phases.push({
+        label: referenceImages.length
+          ? `Diretor de Arte usando ${referenceImages.length} referência(s)`
+          : "Diretor de Arte compondo variantes",
+        agent: "creative_director",
+      });
       const images = await stabilizeImages(
-        await callImagePair(apiKey, [prompt, visualExtra].filter(Boolean).join("\n\n"), imageModel),
+        await callImagePair(
+          apiKey,
+          [imagePrompt, visualExtra].filter(Boolean).join("\n\n"),
+          imageModel,
+          referenceImages,
+        ),
       );
-      return json({ text: "", images, textModel, imageModel, phases });
+      return json({ text: "", images, textModel, imageModel, phases, usedReferences: referenceImages.length });
     }
 
     if (mode === "video") {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
-      const prompt = body?.prompt || lastUser?.content || "";
-      if (!prompt) throw new Error("Missing video prompt");
-      phases.push({ label: `Enviando job para ${videoModel}`, agent: "creative_director" });
-      const videoJob = await submitVideo(apiKey, videoModel, [prompt, visualExtra].filter(Boolean).join("\n\n"));
-      return json({ text: "", videoJob, textModel, videoModel, phases });
+      const lastUserText =
+        typeof lastUser?.content === "string"
+          ? lastUser.content
+          : Array.isArray(lastUser?.content)
+            ? lastUser.content
+                .filter((p): p is { type: "text"; text: string } => p.type === "text")
+                .map((p) => p.text)
+                .join("\n")
+            : "";
+      const prompt = body?.prompt || lastUserText || "";
+      if (!prompt && !referenceImages.length) throw new Error("Missing video prompt");
+      const videoPrompt =
+        prompt ||
+        "Cinematic short vertical ad based on the attached reference image. Subtle camera motion, professional lighting.";
+      // Prefer image-to-video when the user provided a reference frame.
+      const seedImage = referenceImages[0];
+      phases.push({
+        label: seedImage
+          ? `Image-to-video (${videoModel}) com referência`
+          : `Enviando job para ${videoModel}`,
+        agent: "creative_director",
+      });
+      const videoJob = await submitVideo(
+        apiKey,
+        videoModel,
+        [videoPrompt, visualExtra].filter(Boolean).join("\n\n"),
+        seedImage ? { imageUrl: seedImage, aspect_ratio: "9:16", duration: "5" } : { aspect_ratio: "9:16" },
+      );
+      return json({
+        text: "",
+        videoJob,
+        textModel,
+        videoModel,
+        phases,
+        usedReferences: referenceImages.length,
+      });
     }
 
     if (mode === "ad_video") {
       const prompt = String(body?.prompt || "").trim();
       const script = String(body?.script || "").trim();
       const visual = String(body?.visual || prompt).trim();
-      if (!visual) throw new Error("Missing ad video visual prompt");
+      if (!visual && !referenceImages.length) throw new Error("Missing ad video visual prompt");
 
       phases.push({ label: "Diretor de Arte gerando frame-âncora 9:16", agent: "creative_director" });
       const rawHeroImageUrl = await callImage(
         apiKey,
-        `${[visual, visualExtra].filter(Boolean).join("\n\n")}\n\nFormat: 9:16 vertical hero frame for a video ad — clean composition, strong subject, dramatic lighting`,
+        `${[visual || "Hero frame for vertical ad video", visualExtra].filter(Boolean).join("\n\n")}\n\nFormat: 9:16 vertical hero frame for a video ad — clean composition, strong subject, dramatic lighting`,
         imageModel,
         "1024x1792",
+        referenceImages,
       );
       const heroImage = await stabilizeImage({
         url: rawHeroImageUrl,
@@ -636,7 +873,7 @@ Deno.serve(async (req) => {
       phases.push({ label: `Enviando image-to-video ao ${videoModel}`, agent: "creative_director" });
       const motionPrompt = script
         ? `Ad video visualizing this narration: "${script}". Motion: subtle camera push-in, natural movement, cinematic. ${visual}`
-        : visual;
+        : visual || "Natural cinematic motion from the hero frame.";
       const videoJob = await submitVideo(apiKey, videoModel, motionPrompt, {
         imageUrl: heroImageUrl,
         aspect_ratio: "9:16",
@@ -651,13 +888,15 @@ Deno.serve(async (req) => {
         imageModel,
         videoModel,
         phases,
+        usedReferences: referenceImages.length,
       });
     }
 
     if (!messages.length) throw new Error("Missing messages");
 
     phases.push({ label: `Diretor de Marketing consultando ${textModel}`, agent: "director" });
-    const rawText = await callText(apiKey, messages, textModel, extraSystem);
+    const visionMessages = withAttachmentVision(messages, referenceImages);
+    const rawText = await callText(apiKey, visionMessages, textModel, extraSystem);
 
     let cleanedText = rawText;
     let images: GeneratedImage[] | undefined;
@@ -723,11 +962,12 @@ Deno.serve(async (req) => {
       const visualPrompt = [visual, visualExtra].filter(Boolean).join("\n\n");
       phases.push({ label: "Diretor de Arte gerando frame-âncora 9:16", agent: "creative_director" });
       try {
-        const rawHeroImageUrl = await callImage(
+          const rawHeroImageUrl = await callImage(
           apiKey,
           `${visualPrompt}\n\nFormat: 9:16 vertical hero frame for a video ad — clean composition, strong subject, dramatic lighting`,
           imageModel,
           "1024x1792",
+          referenceImages,
         );
         const storedHero = await stabilizeImage({
           url: rawHeroImageUrl,
@@ -764,7 +1004,9 @@ Deno.serve(async (req) => {
       const imgPrompt = [imgMatch[1].trim(), visualExtra].filter(Boolean).join("\n\n");
       phases.push({ label: "Diretor de Arte gerando 1:1 e 9:16", agent: "creative_director" });
       try {
-        images = await stabilizeImages(await callImagePair(apiKey, imgPrompt, imageModel));
+        images = await stabilizeImages(
+          await callImagePair(apiKey, imgPrompt, imageModel, referenceImages),
+        );
       } catch (err) {
         cleanedText += `\n\n_⚠️ Falha ao gerar imagem: ${(err as Error).message}_`;
       }
@@ -775,9 +1017,20 @@ Deno.serve(async (req) => {
     if (vidMatch && !videoJob) {
       cleanedText = cleanedText.replace(VID_RE, "").trim();
       const vPrompt = [vidMatch[1].trim(), visualExtra].filter(Boolean).join("\n\n");
-      phases.push({ label: `Enviando text-to-video ao ${videoModel}`, agent: "creative_director" });
+      const seedImage = referenceImages[0];
+      phases.push({
+        label: seedImage
+          ? `Image-to-video (${videoModel}) com referência`
+          : `Enviando text-to-video ao ${videoModel}`,
+        agent: "creative_director",
+      });
       try {
-        videoJob = await submitVideo(apiKey, videoModel, vPrompt);
+        videoJob = await submitVideo(
+          apiKey,
+          videoModel,
+          vPrompt,
+          seedImage ? { imageUrl: seedImage, aspect_ratio: "9:16", duration: "5" } : undefined,
+        );
       } catch (err) {
         cleanedText += `\n\n_⚠️ Falha ao enviar vídeo: ${(err as Error).message}_`;
       }

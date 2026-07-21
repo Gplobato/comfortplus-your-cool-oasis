@@ -205,6 +205,14 @@ export interface AgentMessage {
   generationStatus?: "queued" | "processing" | "completed" | "failed";
   generationStartedAt?: string;
   modelUsed?: string;
+  /** Ready-to-publish social copy generated with the creative. */
+  postCopy?: {
+    title: string;
+    caption: string;
+    hashtags: string[];
+    cta: string;
+    mentions: string[];
+  };
 }
 
 export interface AgentConversation {

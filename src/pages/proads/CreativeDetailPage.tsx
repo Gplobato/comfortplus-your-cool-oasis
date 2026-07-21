@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArrowLeft, CalendarDays, Copy, ImageIcon, Link2, Save, Sparkles, Trash2 } from "lucide-react";
+import { Archive, ArrowLeft, CalendarDays, Copy, Hash, ImageIcon, Link2, Save, Sparkles, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/proads/PageHeader";
 import { EmptyState } from "@/components/proads/EmptyState";
 import { Card } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useMetaCreatives, useMetaCampaignDetail, useMetaCampaigns } from "@/hooks/useMetaData";
+import { generatePostContent, useMetaCreatives, useMetaCampaignDetail, useMetaCampaigns } from "@/hooks/useMetaData";
 import { useMetaIntegration } from "@/contexts/MetaIntegrationContext";
 import {
   archiveCreative,
@@ -20,6 +20,7 @@ import {
   duplicateCreative,
   updateCreative,
 } from "@/lib/creative-library";
+import { buildCreativeBrief } from "@/lib/social-posts";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDate, formatNumber } from "@/lib/format";
 import { toast } from "sonner";
@@ -48,6 +49,7 @@ export default function CreativeDetailPage() {
   const [adsetId, setAdsetId] = useState("");
   const [pageId, setPageId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [generatingCopy, setGeneratingCopy] = useState(false);
   const selectedCampaignDetail = useMetaCampaignDetail(campaignId || undefined);
   const pages = useQuery({
     queryKey: ["meta-pages-for-creative", meta.connectionId],
@@ -134,6 +136,41 @@ export default function CreativeDetailPage() {
     }
   };
 
+  const generateCopy = async () => {
+    if (!organizationId || !creative) return;
+    setGeneratingCopy(true);
+    try {
+      const content = await generatePostContent({
+        brief: buildCreativeBrief(creative, form.name || creative.name),
+        platform: "instagram_feed",
+        organizationId,
+      });
+      const tags = content.hashtags.map((h) => h.replace(/^#/, "")).join(", ");
+      setForm((prev) => ({
+        ...prev,
+        headline: content.title || prev.headline,
+        primary_text: content.caption || prev.primary_text,
+        cta: content.cta || prev.cta,
+        tags: tags || prev.tags,
+        description: content.mentions.length
+          ? `Menções: ${content.mentions.join(" ")}`
+          : prev.description,
+        publication_status: "ready",
+      }));
+      toast.success("Copy de post gerada — revise e salve");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao gerar copy");
+    } finally {
+      setGeneratingCopy(false);
+    }
+  };
+
+  const tagList = form.tags
+    .split(/[,\s]+/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`));
+
   const linkCampaign = async () => {
     const campaign = campaignQuery.data?.campaigns.find((item) => item.id === campaignId);
     const adset = selectedCampaignDetail.data?.adsets.find((item) => item.id === adsetId);
@@ -170,10 +207,19 @@ export default function CreativeDetailPage() {
     <>
       <PageHeader
         title={creative.name}
-        description="Edite a copy, organize tags e atrele este ativo a campanhas."
+        description="Padronize como post/story: título, legenda, hashtags e CTA — e use também em campanha."
         actions={
           <>
             <Button variant="ghost" size="sm" onClick={() => navigate("/criativos")}><ArrowLeft className="h-4 w-4" /> Voltar</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              disabled={generatingCopy}
+              onClick={() => void generateCopy()}
+            >
+              <Sparkles className="h-4 w-4" /> {generatingCopy ? "Gerando copy…" : "Gerar copy com IA"}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -212,10 +258,41 @@ export default function CreativeDetailPage() {
             )}
           </Card>
 
+          {(form.headline || form.primary_text || tagList.length > 0) && (
+            <Card className="p-5 shadow-card">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Prévia do post</p>
+              {form.headline && <h3 className="mt-2 font-display text-lg font-bold">{form.headline}</h3>}
+              {form.primary_text && (
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{form.primary_text}</p>
+              )}
+              {tagList.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {tagList.map((tag) => (
+                    <Badge key={tag} variant="secondary" className="gap-1 font-normal">
+                      <Hash className="h-3 w-3" />
+                      {tag.replace(/^#/, "")}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              {form.cta && <p className="mt-3 text-xs font-semibold text-primary">CTA: {form.cta}</p>}
+            </Card>
+          )}
+
           <Card className="p-5 shadow-card">
-            <h2 className="font-display font-bold">Informações e copy</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="font-display font-bold">Pronto para post / story</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Título, legenda e hashtags no padrão de publicação. Use “Gerar copy com IA” se estiver vazio.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" className="gap-2" disabled={generatingCopy} onClick={() => void generateCopy()}>
+                <Sparkles className="h-3.5 w-3.5" /> {generatingCopy ? "Gerando…" : "Gerar copy"}
+              </Button>
+            </div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <Field label="Nome"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+              <Field label="Nome do ativo"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
               <Field label="Estado">
                 <Select value={form.publication_status} onValueChange={(value) => setForm({ ...form, publication_status: value })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -227,14 +304,46 @@ export default function CreativeDetailPage() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Título"><Input value={form.headline} onChange={(e) => setForm({ ...form, headline: e.target.value })} /></Field>
-              <Field label="CTA"><Input value={form.cta} onChange={(e) => setForm({ ...form, cta: e.target.value.toUpperCase() })} /></Field>
-              <Field label="Texto principal" className="md:col-span-2">
-                <Textarea className="min-h-28" value={form.primary_text} onChange={(e) => setForm({ ...form, primary_text: e.target.value })} />
+              <Field label="Título do post" className="md:col-span-2">
+                <Input
+                  placeholder="Ex.: Timelapse da obra em 30 segundos"
+                  value={form.headline}
+                  onChange={(e) => setForm({ ...form, headline: e.target.value })}
+                />
               </Field>
-              <Field label="URL de destino"><Input type="url" value={form.destination_url} onChange={(e) => setForm({ ...form, destination_url: e.target.value })} /></Field>
-              <Field label="Tags"><Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></Field>
-              <Field label="Observações" className="md:col-span-2">
+              <Field label="Legenda / texto principal" className="md:col-span-2">
+                <Textarea
+                  className="min-h-32"
+                  placeholder="Descrição completa do post, com quebras de linha naturais…"
+                  value={form.primary_text}
+                  onChange={(e) => setForm({ ...form, primary_text: e.target.value })}
+                />
+              </Field>
+              <Field label="Hashtags" className="md:col-span-2">
+                <Input
+                  placeholder="obras, timelapse, construcao (separadas por vírgula)"
+                  value={form.tags}
+                  onChange={(e) => setForm({ ...form, tags: e.target.value })}
+                />
+                {tagList.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {tagList.map((tag) => (
+                      <Badge key={tag} variant="outline">{tag}</Badge>
+                    ))}
+                  </div>
+                )}
+              </Field>
+              <Field label="CTA">
+                <Input
+                  placeholder="Saiba mais / Fale no WhatsApp"
+                  value={form.cta}
+                  onChange={(e) => setForm({ ...form, cta: e.target.value })}
+                />
+              </Field>
+              <Field label="URL de destino">
+                <Input type="url" value={form.destination_url} onChange={(e) => setForm({ ...form, destination_url: e.target.value })} />
+              </Field>
+              <Field label="Observações internas" className="md:col-span-2">
                 <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </Field>
             </div>
@@ -307,7 +416,27 @@ export default function CreativeDetailPage() {
             <Button
               variant="outline"
               className="mt-4 w-full gap-2"
-              onClick={() => navigate(`/conteudo/novo?creative=${creative.id}`)}
+              onClick={async () => {
+                const hasCopy = !!(form.headline.trim() || form.primary_text.trim() || form.tags.trim());
+                if (hasCopy) {
+                  try {
+                    await updateCreative(creative.id, {
+                      name: form.name.trim() || creative.name,
+                      headline: form.headline.trim() || null,
+                      primary_text: form.primary_text.trim() || null,
+                      cta: form.cta.trim() || null,
+                      destination_url: form.destination_url.trim() || null,
+                      description: form.description.trim() || null,
+                      tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+                      publication_status: form.publication_status as typeof creative.publication_status,
+                    });
+                    await refresh();
+                  } catch {
+                    /* still navigate */
+                  }
+                }
+                navigate(`/conteudo/novo?creative=${creative.id}`);
+              }}
             >
               <CalendarDays className="h-4 w-4" /> Criar post
             </Button>

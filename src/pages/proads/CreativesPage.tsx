@@ -211,12 +211,19 @@ function CreativeCard({ creative, onClick }: { creative: LibraryCreative; onClic
         )}
       </div>
       <div className="p-3">
-        <p className="truncate text-sm font-semibold">{creative.name}</p>
-        <p className="mt-1 truncate text-xs text-muted-foreground">
-          {creative.headline || creative.description || "Sem copy definida"}
+        <p className="truncate text-sm font-semibold">{creative.headline || creative.name}</p>
+        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+          {creative.primary_text || creative.description || "Sem legenda — abra e gere a copy"}
         </p>
         <div className="mt-2 flex flex-wrap gap-1">
-          {(creative.tags ?? []).slice(0, 2).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
+          {(creative.tags ?? []).slice(0, 3).map((tag) => (
+            <Badge key={tag} variant="outline" className="text-[10px]">
+              {tag.startsWith("#") ? tag : `#${tag}`}
+            </Badge>
+          ))}
+          {!creative.tags?.length && !creative.primary_text && (
+            <Badge variant="secondary" className="text-[10px]">Copy pendente</Badge>
+          )}
         </div>
       </div>
     </Card>

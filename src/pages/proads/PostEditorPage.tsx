@@ -57,6 +57,11 @@ type PendingPostMedia = {
   storagePath: string | null;
   label: string;
   type: "image" | "video";
+  title?: string;
+  caption?: string;
+  hashtags?: string[];
+  cta?: string;
+  mentions?: string[];
 };
 
 function loadPendingPostMedia(): PendingPostMedia | null {
@@ -68,6 +73,11 @@ function loadPendingPostMedia(): PendingPostMedia | null {
       storagePath: parsed.storagePath ? String(parsed.storagePath) : null,
       label: String(parsed.label || "Criativo do Agente IA"),
       type: parsed.type === "video" ? "video" : "image",
+      title: parsed.title ? String(parsed.title) : "",
+      caption: parsed.caption ? String(parsed.caption) : "",
+      hashtags: Array.isArray(parsed.hashtags) ? parsed.hashtags.map(String) : [],
+      cta: parsed.cta ? String(parsed.cta) : "",
+      mentions: Array.isArray(parsed.mentions) ? parsed.mentions.map(String) : [],
     };
   } catch {
     return null;
@@ -128,12 +138,35 @@ export default function PostEditorPage() {
 
   const selectedCreative = creatives.find((c) => c.id === form.creativeId) ?? null;
 
-  // Preselect creative for a brand-new post (?creative=<id>)
+  // Preselect creative for a brand-new post (?creative=<id>) and hydrate copy from gallery
   useEffect(() => {
     if (!isNew) return;
     const preset = searchParams.get("creative");
-    if (preset && !form.creativeId) setForm((f) => ({ ...f, creativeId: preset }));
-  }, [isNew, searchParams, form.creativeId]);
+    if (!preset || form.creativeId) return;
+    const creative = creatives.find((c) => c.id === preset);
+    setForm((f) => ({
+      ...f,
+      creativeId: preset,
+      title: creative?.headline || f.title,
+      caption: creative?.primary_text || f.caption,
+      hashtags: creative?.tags?.length ? creative.tags : f.hashtags,
+      cta: creative?.cta || f.cta,
+      linkUrl: creative?.destination_url || f.linkUrl,
+    }));
+  }, [isNew, searchParams, form.creativeId, creatives]);
+
+  // Hydrate copy coming from the AI agent ("Usar em post")
+  useEffect(() => {
+    if (!isNew || !pendingMedia) return;
+    setForm((f) => ({
+      ...f,
+      title: f.title || pendingMedia.title || pendingMedia.label || "",
+      caption: f.caption || pendingMedia.caption || "",
+      hashtags: f.hashtags.length ? f.hashtags : pendingMedia.hashtags ?? [],
+      cta: f.cta || pendingMedia.cta || "",
+      mentions: f.mentions.length ? f.mentions : pendingMedia.mentions ?? [],
+    }));
+  }, [isNew, pendingMedia]);
 
   // Load existing post into the form once
   useEffect(() => {
@@ -364,7 +397,16 @@ export default function PostEditorPage() {
               onValueChange={(v) => {
                 setPendingMedia(null);
                 sessionStorage.removeItem(PENDING_POST_MEDIA_KEY);
-                setForm({ ...form, creativeId: v });
+                const creative = creatives.find((c) => c.id === v);
+                setForm((f) => ({
+                  ...f,
+                  creativeId: v,
+                  title: creative?.headline || f.title,
+                  caption: creative?.primary_text || f.caption,
+                  hashtags: creative?.tags?.length ? creative.tags : f.hashtags,
+                  cta: creative?.cta || f.cta,
+                  linkUrl: creative?.destination_url || f.linkUrl,
+                }));
               }}
             >
               <SelectTrigger><SelectValue placeholder="Selecione um criativo" /></SelectTrigger>
