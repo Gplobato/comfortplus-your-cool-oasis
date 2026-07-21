@@ -413,6 +413,8 @@ export async function saveAiCreative(input: {
   name: string;
   thumbnailUrl?: string | null;
   mediaUrl?: string | null;
+  storagePath?: string | null;
+  mimeType?: string | null;
   type?: string;
   headline?: string | null;
   primaryText?: string | null;
@@ -429,6 +431,8 @@ export async function saveAiCreative(input: {
       format: input.type ?? "image",
       thumbnail_url: input.thumbnailUrl ?? input.mediaUrl ?? null,
       media_url: input.mediaUrl ?? input.thumbnailUrl ?? null,
+      storage_path: input.storagePath ?? null,
+      mime_type: input.mimeType ?? null,
       headline: input.headline ?? null,
       primary_text: input.primaryText ?? null,
       cta: input.cta ?? null,

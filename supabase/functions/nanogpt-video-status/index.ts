@@ -1,4 +1,6 @@
 // Poll a NanoGPT video job. Called every few seconds by the client until COMPLETED/FAILED.
+import { requireOrgMember, requireUser, type AuthContext } from "../_shared/meta-auth.ts";
+import { persistGeneratedMedia } from "../_shared/media-storage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -33,8 +35,17 @@ Deno.serve(async (req) => {
     const apiKey = Deno.env.get("NANOGPT_API_KEY");
     if (!apiKey) throw new Error("NANOGPT_API_KEY não configurada");
 
-    const { runId } = await req.json();
+    const { runId, organization_id } = await req.json();
     if (!runId) throw new Error("runId obrigatório");
+    const organizationId = String(organization_id || "");
+    let mediaAuth: AuthContext | null = null;
+    if (organizationId) {
+      const auth = await requireUser(req);
+      if (auth instanceof Response) return auth;
+      const membership = await requireOrgMember(auth, organizationId);
+      if (membership !== true) return membership;
+      mediaAuth = auth;
+    }
 
     const r = await fetch(
       `${NANO_BASE}/api/video/status?requestId=${encodeURIComponent(runId)}`,
@@ -70,7 +81,25 @@ Deno.serve(async (req) => {
         payload.status = "failed";
         payload.error = "Job completo mas sem URL de vídeo";
       } else {
-        payload.videoUrl = url;
+        if (mediaAuth && organizationId) {
+          try {
+            const stored = await persistGeneratedMedia(
+              mediaAuth.adminClient,
+              organizationId,
+              url,
+              "video",
+              String(runId),
+            );
+            payload.videoUrl = stored.url;
+            payload.storage_path = stored.storage_path;
+          } catch (storageError) {
+            console.error("generated video persistence failed", storageError);
+            payload.videoUrl = url;
+            payload.storage_warning = (storageError as Error).message;
+          }
+        } else {
+          payload.videoUrl = url;
+        }
       }
     }
     if (status === "failed") {

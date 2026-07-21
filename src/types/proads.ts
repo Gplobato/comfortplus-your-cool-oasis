@@ -192,8 +192,9 @@ export interface AgentMessage {
   actions?: { label: string; kind: "primary" | "secondary" | "ghost" }[];
   status?: "sending" | "sent" | "error";
   imageUrl?: string;
-  images?: { url: string; format: string; label?: string }[];
+  images?: { url: string; format: string; label?: string; storage_path?: string }[];
   videoUrl?: string;
+  videoStoragePath?: string;
   videoJob?: { runId: string; model: string; prompt: string };
   videoStatus?: "queued" | "processing" | "completed" | "failed";
   videoProgress?: number | null;

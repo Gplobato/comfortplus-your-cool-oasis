@@ -1,7 +1,8 @@
 // NanoGPT multi-agent chat for ProAds.
 // Video generation is ASYNC: this function submits the job and returns { videoJob: { runId, model } }
 // immediately. The client polls `nanogpt-video-status` until COMPLETED.
-import { requireOrgMember, requireUser } from "../_shared/meta-auth.ts";
+import { requireOrgMember, requireUser, type AuthContext } from "../_shared/meta-auth.ts";
+import { persistGeneratedMedia } from "../_shared/media-storage.ts";
 import { extractProposeActions, insertProposals } from "../_shared/proposals.ts";
 import { formatSearchForPrompt, shouldWebSearch, webSearch } from "../_shared/web-search.ts";
 
@@ -274,6 +275,34 @@ Deno.serve(async (req) => {
     const useBrandLogo: boolean = !!body?.useBrandLogo;
     const attachments: string[] = Array.isArray(body?.attachments) ? body.attachments : [];
     const metaContext = body?.metaContext ?? null;
+    const organizationId = String(body?.organization_id || metaContext?.organization_id || "");
+    let mediaAuth: AuthContext | null = null;
+    if (!isTrafficManager && organizationId) {
+      const auth = await requireUser(req);
+      if (auth instanceof Response) return auth;
+      const membership = await requireOrgMember(auth, organizationId);
+      if (membership !== true) return membership;
+      mediaAuth = auth;
+    }
+
+    type GeneratedImage = { url: string; format: string; label: string; storage_path?: string };
+    const stabilizeImage = async (image: GeneratedImage): Promise<GeneratedImage> => {
+      if (!mediaAuth || !organizationId) return image;
+      try {
+        const stored = await persistGeneratedMedia(
+          mediaAuth.adminClient,
+          organizationId,
+          image.url,
+          "image",
+        );
+        return { ...image, url: stored.url, storage_path: stored.storage_path };
+      } catch (error) {
+        console.error("generated image persistence failed", error);
+        return image;
+      }
+    };
+    const stabilizeImages = (images: GeneratedImage[]) =>
+      Promise.all(images.map(stabilizeImage));
 
     const contextBits: string[] = [];
     if (useBrandLogo && !isTrafficManager)
@@ -488,7 +517,9 @@ Deno.serve(async (req) => {
       const prompt = body?.prompt || lastUser?.content || "";
       if (!prompt) throw new Error("Missing image prompt");
       phases.push({ label: "Diretor de Arte compondo variantes", agent: "creative_director" });
-      const images = await callImagePair(apiKey, [prompt, extraSystem].filter(Boolean).join("\n\n"), imageModel);
+      const images = await stabilizeImages(
+        await callImagePair(apiKey, [prompt, extraSystem].filter(Boolean).join("\n\n"), imageModel),
+      );
       return json({ text: "", images, textModel, imageModel, phases });
     }
 
@@ -508,12 +539,18 @@ Deno.serve(async (req) => {
       if (!visual) throw new Error("Missing ad video visual prompt");
 
       phases.push({ label: "Diretor de Arte gerando frame-âncora 9:16", agent: "creative_director" });
-      const heroImageUrl = await callImage(
+      const rawHeroImageUrl = await callImage(
         apiKey,
         `${[visual, extraSystem].filter(Boolean).join("\n\n")}\n\nFormat: 9:16 vertical hero frame for a video ad — clean composition, strong subject, dramatic lighting`,
         imageModel,
         "1024x1792",
       );
+      const heroImage = await stabilizeImage({
+        url: rawHeroImageUrl,
+        format: "9:16",
+        label: "Frame-âncora 9:16",
+      });
+      const heroImageUrl = heroImage.url;
       phases.push({ label: `Enviando image-to-video ao ${videoModel}`, agent: "creative_director" });
       const motionPrompt = script
         ? `Ad video visualizing this narration: "${script}". Motion: subtle camera push-in, natural movement, cinematic. ${visual}`
@@ -525,7 +562,7 @@ Deno.serve(async (req) => {
       });
       return json({
         text: script ? `**🎬 Roteiro / Narração:**\n\n> ${script.replace(/\n/g, "\n> ")}` : "",
-        images: [{ url: heroImageUrl, format: "9:16", label: "Frame-âncora 9:16" }],
+        images: [heroImage],
         videoJob,
         script,
         textModel,
@@ -541,9 +578,10 @@ Deno.serve(async (req) => {
     const rawText = await callText(apiKey, messages, textModel, extraSystem);
 
     let cleanedText = rawText;
-    let images: { url: string; format: string; label: string }[] | undefined;
+    let images: GeneratedImage[] | undefined;
     let videoJob: { runId: string; model: string; prompt: string } | undefined;
     let heroImageUrl: string | undefined;
+    let heroImageStoragePath: string | undefined;
     let script: string | undefined;
 
     if (deferMedia) {
@@ -603,12 +641,19 @@ Deno.serve(async (req) => {
       const visualPrompt = [visual, extraSystem].filter(Boolean).join("\n\n");
       phases.push({ label: "Diretor de Arte gerando frame-âncora 9:16", agent: "creative_director" });
       try {
-        heroImageUrl = await callImage(
+        const rawHeroImageUrl = await callImage(
           apiKey,
           `${visualPrompt}\n\nFormat: 9:16 vertical hero frame for a video ad — clean composition, strong subject, dramatic lighting`,
           imageModel,
           "1024x1792",
         );
+        const storedHero = await stabilizeImage({
+          url: rawHeroImageUrl,
+          format: "9:16",
+          label: "Frame-âncora 9:16",
+        });
+        heroImageUrl = storedHero.url;
+        heroImageStoragePath = storedHero.storage_path;
       } catch (err) {
         cleanedText += `\n\n_⚠️ Falha ao gerar frame-âncora: ${(err as Error).message}_`;
       }
@@ -637,7 +682,7 @@ Deno.serve(async (req) => {
       const imgPrompt = [imgMatch[1].trim(), extraSystem].filter(Boolean).join("\n\n");
       phases.push({ label: "Diretor de Arte gerando 1:1 e 9:16", agent: "creative_director" });
       try {
-        images = await callImagePair(apiKey, imgPrompt, imageModel);
+        images = await stabilizeImages(await callImagePair(apiKey, imgPrompt, imageModel));
       } catch (err) {
         cleanedText += `\n\n_⚠️ Falha ao gerar imagem: ${(err as Error).message}_`;
       }
@@ -658,7 +703,14 @@ Deno.serve(async (req) => {
 
     const responseImages =
       images ??
-      (heroImageUrl ? [{ url: heroImageUrl, format: "9:16", label: "Frame-âncora 9:16" }] : undefined);
+      (heroImageUrl
+        ? [{
+            url: heroImageUrl,
+            format: "9:16",
+            label: "Frame-âncora 9:16",
+            storage_path: heroImageStoragePath,
+          }]
+        : undefined);
 
     return json({
       text: cleanedText,

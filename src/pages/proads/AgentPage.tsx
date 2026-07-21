@@ -58,6 +58,7 @@ import { cn } from "@/lib/utils";
 import brandLogo from "@/assets/brand-logo.png";
 import { useMetaAgentContext } from "@/hooks/useMetaAgentContext";
 import { saveAiCreative, useMetaCampaigns } from "@/hooks/useMetaData";
+import { signedCreativeUrl } from "@/lib/creative-library";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -165,7 +166,9 @@ export default function AgentPage() {
   const { activeOrg } = useOrganization();
   const { user } = useAuth();
 
-  const persistAiImages = (images?: { url: string; label?: string; aspect?: string }[] | null) => {
+  const persistAiImages = (
+    images?: { url: string; label?: string; aspect?: string; storage_path?: string }[] | null,
+  ) => {
     if (!activeOrg?.id || !images?.length) return;
     void Promise.allSettled(
       images.map((img, i) =>
@@ -174,6 +177,8 @@ export default function AgentPage() {
           name: img.label || `Criativo IA ${img.aspect || ""}`.trim() || `Criativo IA ${i + 1}`,
           thumbnailUrl: img.url,
           mediaUrl: img.url,
+          storagePath: img.storage_path ?? null,
+          mimeType: "image/png",
           type: "image",
           userId: user?.id ?? null,
         }),
@@ -239,7 +244,7 @@ export default function AgentPage() {
       for (const p of pending) {
         try {
           const { data, error } = await supabase.functions.invoke("nanogpt-video-status", {
-            body: { runId: p.runId },
+            body: { runId: p.runId, organization_id: activeOrg?.id },
           });
           if (cancelled) return;
           if (error) continue;
@@ -256,6 +261,7 @@ export default function AgentPage() {
                         return {
                           ...m,
                           videoUrl: data.videoUrl,
+                          videoStoragePath: data.storage_path ?? m.videoStoragePath,
                           videoStatus: "completed",
                           videoProgress: 100,
                           content: m.content.replace(
@@ -293,7 +299,7 @@ export default function AgentPage() {
       cancelled = true;
       clearInterval(iv);
     };
-  }, [threads]);
+  }, [threads, activeOrg?.id]);
 
   const updateThread = (id: string, patch: (t: AgentThread) => AgentThread) => {
     setThreads((prev) => prev.map((t) => (t.id === id ? patch(t) : t)));
@@ -340,6 +346,7 @@ export default function AgentPage() {
         useBrandLogo: brandOn,
         attachments: attachmentUrls,
         metaContext,
+        organization_id: activeOrg?.id,
       };
 
       if (request.type === "image") {
@@ -422,6 +429,7 @@ export default function AgentPage() {
           attachments: attachmentUrls,
           deferMedia: true,
           metaContext,
+          organization_id: activeOrg?.id,
         },
       });
 
@@ -622,6 +630,7 @@ export default function AgentPage() {
           attachments: attachmentUrls,
           deferMedia: true,
           metaContext,
+          organization_id: activeOrg?.id,
         },
       });
 
@@ -1197,6 +1206,7 @@ function MessageBubble({
               <ImageResult
                 key={i}
                 url={img.url}
+                storagePath={img.storage_path}
                 label={img.label ?? img.format}
                 onUseInCampaign={onUseInCampaign}
                 campaigns={campaigns}
@@ -1218,21 +1228,75 @@ function MessageBubble({
 
         {/* Video */}
         {message.videoUrl && (
-          <div className="overflow-hidden rounded-2xl border border-border bg-card">
-            <video src={message.videoUrl} controls className="h-auto w-full max-w-md" />
-            <div className="flex items-center justify-between gap-2 border-t border-border p-2">
-              <span className="text-[11px] text-muted-foreground">Vídeo gerado</span>
-              <a
-                href={message.videoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
-              >
-                <Download className="h-3 w-3" /> Baixar
-              </a>
-            </div>
-          </div>
+          <VideoResult url={message.videoUrl} storagePath={message.videoStoragePath} />
         )}
+      </div>
+    </div>
+  );
+}
+
+function VideoResult({ url, storagePath }: { url: string; storagePath?: string }) {
+  const [resolvedUrl, setResolvedUrl] = useState(url);
+  const [mediaError, setMediaError] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshAttempted = useRef(false);
+
+  useEffect(() => {
+    setResolvedUrl(url);
+    setMediaError(false);
+    refreshAttempted.current = false;
+  }, [url]);
+
+  const recoverMedia = async (force = false) => {
+    if (!storagePath || refreshing || (refreshAttempted.current && !force)) {
+      setMediaError(true);
+      return;
+    }
+    refreshAttempted.current = true;
+    setRefreshing(true);
+    const refreshed = await signedCreativeUrl(storagePath);
+    setRefreshing(false);
+    if (refreshed) {
+      setResolvedUrl(refreshed);
+      setMediaError(false);
+    } else {
+      setMediaError(true);
+    }
+  };
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      {mediaError ? (
+        <div className="flex min-h-48 flex-col items-center justify-center gap-3 bg-muted/40 p-6 text-center">
+          <Film className="h-8 w-8 text-muted-foreground" />
+          <p className="text-xs font-medium text-muted-foreground">
+            Este vídeo expirou ou não pôde ser carregado.
+          </p>
+          {storagePath && (
+            <Button size="sm" variant="outline" disabled={refreshing} onClick={() => void recoverMedia(true)}>
+              {refreshing ? "Atualizando…" : "Tentar novamente"}
+            </Button>
+          )}
+        </div>
+      ) : (
+        <video
+          src={resolvedUrl}
+          controls
+          preload="metadata"
+          className="h-auto w-full max-w-md bg-black"
+          onError={() => void recoverMedia()}
+        />
+      )}
+      <div className="flex items-center justify-between gap-2 border-t border-border p-2">
+        <span className="text-[11px] text-muted-foreground">Vídeo gerado</span>
+        <a
+          href={resolvedUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+        >
+          <Download className="h-3 w-3" /> Baixar
+        </a>
       </div>
     </div>
   );
@@ -1240,26 +1304,76 @@ function MessageBubble({
 
 function ImageResult({
   url,
+  storagePath,
   label,
   onUseInCampaign,
   campaigns,
 }: {
   url: string;
+  storagePath?: string;
   label: string;
   onUseInCampaign: (url: string, target: "new" | string) => void;
   campaigns: { id: string; name: string }[];
 }) {
+  const [resolvedUrl, setResolvedUrl] = useState(url);
+  const [mediaError, setMediaError] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshAttempted = useRef(false);
+
+  useEffect(() => {
+    setResolvedUrl(url);
+    setMediaError(false);
+    refreshAttempted.current = false;
+  }, [url]);
+
+  const recoverMedia = async (force = false) => {
+    if (!storagePath || refreshing || (refreshAttempted.current && !force)) {
+      setMediaError(true);
+      return;
+    }
+    refreshAttempted.current = true;
+    setRefreshing(true);
+    const refreshed = await signedCreativeUrl(storagePath);
+    setRefreshing(false);
+    if (refreshed) {
+      setResolvedUrl(refreshed);
+      setMediaError(false);
+    } else {
+      setMediaError(true);
+    }
+  };
+
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card">
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <Badge variant="outline" className="border-primary/30 bg-gradient-brand-soft text-[10px] font-semibold text-primary">
           {label}
         </Badge>
-        <a href={url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" aria-label="Baixar">
+        <a href={resolvedUrl} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" aria-label="Baixar">
           <Download className="h-3.5 w-3.5" />
         </a>
       </div>
-      <img src={url} alt={label} className="h-auto w-full" loading="lazy" />
+      {mediaError ? (
+        <div className="flex min-h-48 flex-col items-center justify-center gap-3 bg-muted/40 p-6 text-center">
+          <ImageIcon className="h-8 w-8 text-muted-foreground" />
+          <p className="text-xs font-medium text-muted-foreground">
+            Esta mídia expirou ou não pôde ser carregada.
+          </p>
+          {storagePath && (
+            <Button size="sm" variant="outline" disabled={refreshing} onClick={() => void recoverMedia(true)}>
+              {refreshing ? "Atualizando…" : "Tentar novamente"}
+            </Button>
+          )}
+        </div>
+      ) : (
+        <img
+          src={resolvedUrl}
+          alt={label}
+          className="h-auto w-full bg-muted/30 object-contain"
+          loading="lazy"
+          onError={() => void recoverMedia()}
+        />
+      )}
       <div className="border-t border-border p-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -1269,7 +1383,7 @@ function ImageResult({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuItem onClick={() => onUseInCampaign(url, "new")} className="gap-2">
+            <DropdownMenuItem onClick={() => onUseInCampaign(resolvedUrl, "new")} className="gap-2">
               <Plus className="h-3.5 w-3.5 text-primary" />
               <span className="font-semibold">Criar nova campanha</span>
             </DropdownMenuItem>
@@ -1283,7 +1397,7 @@ function ImageResult({
               </div>
             ) : (
               campaigns.slice(0, 6).map((c) => (
-                <DropdownMenuItem key={c.id} onClick={() => onUseInCampaign(url, c.id)} className="gap-2 text-xs">
+                <DropdownMenuItem key={c.id} onClick={() => onUseInCampaign(resolvedUrl, c.id)} className="gap-2 text-xs">
                   <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                   <span className="truncate">{c.name}</span>
                   <span className="ml-auto text-[10px] uppercase text-muted-foreground">meta</span>
