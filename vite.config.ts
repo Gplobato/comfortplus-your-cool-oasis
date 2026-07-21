@@ -5,12 +5,19 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  // SPA served from Cloudflare Workers Static Assets (root).
+  base: "/",
   server: {
     host: "::",
     port: 8080,
     hmr: {
       overlay: false,
     },
+  },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    sourcemap: false,
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

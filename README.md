@@ -1,22 +1,36 @@
 # ProAds Marketing OS
 
-Aplicação React/Vite do ProAds. O frontend é estático e está preparado para
-Cloudflare Workers Static Assets. Autenticação, banco, Storage e Edge Functions
-continuam no Supabase.
+## Arquitetura de deploy
 
-## Desenvolvimento
+```
+┌────────────────────────────┐     ┌──────────────────────────────────┐
+│  Cloudflare Workers        │     │  Supabase (via Lovable)          │
+│  Frontend estático (Vite)  │────▶│  Auth · Postgres · Storage       │
+│  SPA + cache + _headers    │     │  Edge Functions (Meta, NanoGPT)  │
+└────────────────────────────┘     └──────────────────────────────────┘
+         ▲                                        ▲
+         │ push-lovable.ps1                       │ deploy backend
+         │ (GitHub sync)                          │ (Lovable Cloud)
+         └──────────── Cursor edita ──────────────┘
+```
 
-Requisitos: Node.js 20 ou superior (Node 22 recomendado).
+| Camada | Onde roda | Responsável |
+|--------|-----------|-------------|
+| React / Vite / UI | Cloudflare Workers Static Assets | Cursor → GitHub → Cloudflare |
+| Auth, DB, Storage, Edge Functions | Supabase `rqdrdcwnxwcfvqxukrbx` | Lovable |
+| Meta OAuth / NanoGPT / wizard-preview | Supabase Edge Functions | Lovable |
+
+Não misture secrets de servidor no Cloudflare. Variáveis `VITE_*` são públicas e entram no bundle no build.
+
+## Desenvolvimento local
+
+Node 20+ (22 recomendado — `.nvmrc` / `.node-version`).
 
 ```sh
+cp .env.example .env   # preencha VITE_SUPABASE_*
 npm ci
 npm run dev
 ```
-
-Crie o arquivo `.env` a partir de `.env.example` e informe:
-
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
 
 ## Validação
 
@@ -24,39 +38,69 @@ Crie o arquivo `.env` a partir de `.env.example` e informe:
 npm run build
 npm test
 npx tsc --noEmit
+npm run cf:dry-run     # empacota o Worker sem publicar
 ```
 
-## Cloudflare Workers
+## Cloudflare Workers (frontend)
 
-O arquivo `wrangler.jsonc` publica a pasta `dist` como Static Assets e configura
-fallback nativo de SPA. Assim, rotas como `/dashboard`, `/campanhas/:id` e
-`/wizard` continuam funcionando quando abertas diretamente.
+Configuração em `wrangler.jsonc`:
 
-### Git integration / Workers Builds
+- Assets: `./dist`
+- SPA: `not_found_handling = single-page-application`
+- Observability ligada
+- Headers em `public/_headers` (copiados para `dist` no build)
 
-1. No Cloudflare, escolha **Workers & Pages → Create → Import a repository**.
-2. Selecione este repositório e mantenha a branch de produção `main`.
-3. Use `npm run build` como comando de build.
-4. Use `npx wrangler deploy` como comando de deploy.
-5. Configure `NODE_VERSION=22`.
-6. Cadastre `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` no ambiente
-   de build.
+### Workers Builds (Git)
 
-O output é `dist`. O nome inicial do Worker é `proads-marketing-os` e pode ser
-alterado em `wrangler.jsonc` antes da primeira publicação.
+1. Cloudflare → **Workers & Pages → Create → Import a repository**
+2. Repo: o mesmo do Lovable / GitHub
+3. Branch de produção: `main`
+4. **Build command:** `npm run build`
+5. **Deploy command:** `npx wrangler deploy`
+6. **Build variable:** `NODE_VERSION=22`
+7. **Build variables (obrigatórias):**
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-### Publicação manual
+Essas duas precisam ser **build variables** (não só runtime), porque o Vite embute no JS.
+
+### Deploy manual
 
 ```sh
 npm ci
-npm run deploy:cloudflare
+npm run cf:deploy
 ```
 
-O arquivo `public/_headers` adiciona cabeçalhos de segurança e cache imutável
-para os assets versionados pelo Vite.
+Scripts equivalentes: `cf:dev`, `cf:dry-run`, `deploy:cloudflare`.
 
-## Backend
+### Domínio e Auth
 
-Cloudflare hospeda somente o frontend. As migrations e funções em `supabase/`
-devem ser publicadas no projeto Supabase separadamente. Nenhuma chave secreta de
-servidor deve ser cadastrada como variável `VITE_*`.
+Depois do primeiro deploy (`*.workers.dev` ou domínio custom):
+
+1. Supabase → Authentication → URL Configuration  
+   - Site URL = URL do Cloudflare  
+   - Redirect URLs:  
+     - `https://SEU_DOMINIO/auth/confirm`  
+     - `https://SEU_DOMINIO/redefinir-senha`  
+     - `https://SEU_DOMINIO/**` (se preferir wildcard)
+2. Meta OAuth / return origin usam `window.location.origin` — passam a apontar para o Cloudflare automaticamente.
+
+## Backend (Lovable / Supabase)
+
+Continua no fluxo paralelo:
+
+1. Cursor edita frontend + arquivos `supabase/`
+2. `.\scripts\push-lovable.ps1` envia ao GitHub
+3. Lovable aplica migrations e Edge Functions
+
+Cloudflare **não** substitui o Supabase.
+
+## Checklist de go-live
+
+- [ ] `npm run cf:dry-run` ok localmente
+- [ ] Worker criado no Cloudflare com Git + build/deploy commands
+- [ ] Build vars `VITE_SUPABASE_*` e `NODE_VERSION=22`
+- [ ] Deploy de produção ok
+- [ ] Supabase redirect URLs atualizadas
+- [ ] Lovable aplicou migrations (`creatives`, `organization_ai_settings`, wizard, etc.)
+- [ ] Smoke: `/login`, `/wizard`, `/criativos`, Configurações de IA
